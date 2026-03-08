@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+*.egg
+
+# Django
+*.sqlite3
+*.log
+staticfiles/
+mediafiles/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# macOS
+.DS_Store
+.AppleDouble
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Docker
+.docker/
+
+# Node (future mobile)
+node_modules/

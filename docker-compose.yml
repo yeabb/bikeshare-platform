@@ -1,0 +1,57 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: bikeshare
+      POSTGRES_USER: bikeshare
+      POSTGRES_PASSWORD: bikeshare
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bikeshare"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/broker/version", "-C", "1", "-i", "healthcheck", "-W", "3"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    environment:
+      DJANGO_SETTINGS_MODULE: bikeshare.settings.local
+      POSTGRES_HOST: db
+      POSTGRES_DB: bikeshare
+      POSTGRES_USER: bikeshare
+      POSTGRES_PASSWORD: bikeshare
+      MQTT_BROKER_HOST: mosquitto
+      MQTT_BROKER_PORT: 1883
+      MQTT_BROKER_TYPE: local
+    depends_on:
+      db:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+
+volumes:
+  postgres_data:
