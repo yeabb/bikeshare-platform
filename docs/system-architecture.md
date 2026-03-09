@@ -118,6 +118,89 @@ sequenceDiagram
     API-->>App: 404 NO_ACTIVE_RIDE  (ride is now COMPLETED)
 ```
 
+## Internal Code Flow (Unlock)
+
+How a single unlock request flows through the backend code modules. This is the same regardless of whether you're running locally or in production — only the entry/exit points change.
+
+```mermaid
+flowchart TD
+
+    subgraph HTTP ["HTTP Layer"]
+        VIEW["UnlockCommandView\nviews.py"]
+    end
+
+    subgraph CMD ["commands app"]
+        CS["create_unlock_command()\nservices.py\n\n• Guard: active ride?\n• Guard: pending command?\n• Lookup bike → dock → station\n• Create Command PENDING\n• Dock → UNLOCKING"]
+        HUR["handle_unlock_result()\nservices.py\n\n• Idempotency check\n• Command → SUCCESS / FAILED\n• On FAILED: Dock → OCCUPIED"]
+    end
+
+    subgraph IOT ["iot app"]
+        PUB["publish_unlock_command()\npublisher.py\n\n• Serialize payload\n• Publish to MQTT broker"]
+        EH["handle_station_event()\nevent_handler.py\n\n• Parse event type\n• Route to correct handler"]
+        HUR2["_handle_unlock_result()\nevent_handler.py\n\n• Extract requestId, status, reason\n• Call commands service"]
+        HBD["_handle_bike_docked()\nevent_handler.py\n\n• Extract bikeId, stationId, dockId\n• Call rides service"]
+        HBUD["_handle_bike_undocked()\nevent_handler.py\n\n• Extract stationId, dockId\n• Call stations service"]
+    end
+
+    subgraph RIDES ["rides app"]
+        SR["start_ride()\nservices.py\n\n• Create Ride ACTIVE\n• Bike → IN_USE"]
+        ER["end_ride_on_dock()\nservices.py\n\n• Idempotency check\n• Ride → COMPLETED\n• Bike → AVAILABLE\n• Dock → OCCUPIED"]
+    end
+
+    subgraph STATIONS ["stations app"]
+        HBU["handle_bike_undocked()\nservices.py\n\n• Dock → AVAILABLE\n• Clear Dock.current_bike"]
+    end
+
+    subgraph ENTRY ["Entry Points (environment-dependent)"]
+        LOCAL["mqtt_listener\nmanagement command\nlocal dev only"]
+        LAMBDA["AWS Lambda\nEvent Ingestion\nproduction only"]
+    end
+
+    DB[("PostgreSQL")]
+
+    %% Unlock request path
+    VIEW -->|"bike_id"| CS
+    CS -->|"Command obj"| PUB
+    CS -->|"write"| DB
+    PUB -->|"MQTT: station/id/cmd"| MQTT[["MQTT Broker\nMosquitto / IoT Core"]]
+
+    %% Event ingestion path
+    MQTT -->|"station/id/events"| LOCAL
+    MQTT -->|"station/id/events"| LAMBDA
+    LOCAL -->|"station_id + payload"| EH
+    LAMBDA -->|"station_id + payload"| EH
+
+    %% Event routing
+    EH --> HUR2
+    EH --> HBD
+    EH --> HBUD
+
+    %% Handler → service calls
+    HUR2 -->|"request_id, status, reason"| HUR
+    HBD -->|"bike_id, station_id, dock_index"| ER
+    HBUD -->|"station_id, dock_index"| HBU
+
+    %% Service → service calls
+    HUR -->|"On SUCCESS"| SR
+
+    %% DB writes
+    SR -->|"write"| DB
+    HUR -->|"write"| DB
+    ER -->|"write"| DB
+    HBU -->|"write"| DB
+```
+
+### What each layer is responsible for
+
+| Layer | File | Knows about | Does NOT know about |
+|-------|------|-------------|---------------------|
+| View | `commands/views.py` | HTTP request/response | MQTT, DB |
+| Command service | `commands/services.py` | Business rules, DB | MQTT payload format |
+| IoT publisher | `iot/publisher.py` | MQTT protocol | Business rules |
+| Event handler | `iot/event_handler.py` | MQTT payload fields | Business rules, DB |
+| Ride service | `rides/services.py` | Ride/Bike/Dock state | MQTT, HTTP |
+| Station service | `stations/services.py` | Dock state | MQTT, HTTP, Rides |
+
 ## Bike → Dock Mapping (Critical)
 
 The user scans the **bike** QR code, not the dock. The backend maintains this mapping:
