@@ -1,0 +1,81 @@
+# Fleet configuration for local development and simulation.
+#
+# This file is the single source of truth for what stations, docks, and bikes
+# exist locally. Both the seed script (seed_dev_data) and the station simulator
+# read from this file so they stay in sync.
+#
+# Station behavior modes:
+#   always_success  - every unlock attempt succeeds
+#   always_fail     - every unlock attempt fails (use failure_reason to set why)
+#   flaky           - succeeds most of the time, fails randomly (set fail_rate)
+#   slow            - succeeds but takes longer than normal (use delay_sec)
+#   timeout         - never responds (simulates station going offline)
+
+stations:
+  - id: "S001"
+    name: "Market & 5th"
+    lat: 37.7749
+    lng: -122.4194
+    behavior: always_success
+    docks:
+      - index: 1
+        bike_id: "B001"
+      - index: 2
+        bike_id: "B002"
+      - index: 3
+        bike_id: "B003"
+      - index: 4
+        bike_id: null       # empty dock
+
+  - id: "S002"
+    name: "Mission & 16th"
+    lat: 37.7648
+    lng: -122.4197
+    behavior: flaky
+    fail_rate: 0.3          # 30% chance of failure
+    failure_reason: "LATCH_FAULT"
+    docks:
+      - index: 1
+        bike_id: "B004"
+      - index: 2
+        bike_id: "B005"
+      - index: 3
+        bike_id: null
+      - index: 4
+        bike_id: null
+
+  - id: "S003"
+    name: "Castro & Market"
+    lat: 37.7609
+    lng: -122.4350
+    behavior: always_fail
+    failure_reason: "LATCH_FAULT"
+    docks:
+      - index: 1
+        bike_id: "B006"
+      - index: 2
+        bike_id: null
+      - index: 3
+        bike_id: null
+      - index: 4
+        bike_id: null
+
+  - id: "S004"
+    name: "Caltrain Station"
+    lat: 37.7766
+    lng: -122.3950
+    behavior: timeout         # simulates station not responding
+    docks:
+      - index: 1
+        bike_id: "B007"
+      - index: 2
+        bike_id: null
+      - index: 3
+        bike_id: null
+      - index: 4
+        bike_id: null
+
+users:
+  - phone: "+15550000001"
+  - phone: "+15550000002"
+  - phone: "+15550000003"

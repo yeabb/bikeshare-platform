@@ -1,1 +1,2 @@
 -r base.txt
+honcho==2.0.0

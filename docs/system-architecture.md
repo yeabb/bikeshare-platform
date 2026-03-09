@@ -135,11 +135,24 @@ This mapping is updated by:
 
 ## Local Development
 
-In local development, AWS IoT Core is replaced by a local Mosquitto broker. A Python subscriber process (`simulator/station_sim/`) connects to Mosquitto, subscribes to `station/+/cmd`, and publishes events back.
+In local development AWS IoT Core and Lambda are replaced by two local processes:
 
-The backend publishes to Mosquitto via paho-mqtt (controlled by `MQTT_BROKER_TYPE=local` env var).
+| Production | Local equivalent |
+|------------|-----------------|
+| AWS IoT Core | Mosquitto (Docker) |
+| Lambda ingestion function | `python manage.py mqtt_listener` — subscribes to `station/+/events`, calls `event_handler` directly |
+| Real station hardware | `python -m station_sim.main` — simulates a fleet of stations, subscribes to `station/+/cmd`, publishes events back |
 
-See `docker-compose.yml` for the full local stack.
+The backend publishes to Mosquitto via paho-mqtt (`MQTT_BROKER_TYPE=local`). Everything else — models, services, event_handler — is identical between local and production.
+
+**Starting the full local stack:**
+```bash
+make setup   # first time only
+make dev     # starts everything
+```
+
+**Fleet config:** `simulator/fleet.yml` defines stations, docks, bikes, and behavior modes.
+Each station has a configurable behavior: `always_success`, `always_fail`, `flaky`, `slow`, `timeout`.
 
 ## Key Design Constraints
 

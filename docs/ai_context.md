@@ -44,6 +44,9 @@ This is updated by:
 | MQTT publisher | `apps/iot/publisher.py` | Publishes to Mosquitto (local) or AWS IoT Core |
 | Event router | `apps/iot/event_handler.py` | Parses event type, dispatches to correct service |
 | Dock events | `apps/stations/services.py` | `handle_bike_undocked`, `handle_dock_fault`, etc. |
+| MQTT listener | `apps/iot/management/commands/mqtt_listener.py` | Local dev only — bridges Mosquitto → event_handler (Lambda does this in production) |
+| Seed script | `apps/common/management/commands/seed_dev_data.py` | Populates DB from simulator/fleet.yml |
+| Station simulator | `simulator/station_sim/main.py` | Simulates fleet of stations over MQTT (local dev only) |
 
 ---
 
@@ -126,14 +129,21 @@ Select with `DJANGO_SETTINGS_MODULE`:
 ## Local Dev Quick Start
 
 ```bash
-cd backend
-cp .env.example .env
-docker compose up -d        # starts Postgres + Mosquitto
-python manage.py migrate
-python manage.py runserver
+# First time only
+make setup      # creates venvs, installs deps, runs migrations, seeds DB
+
+# Every time you work
+make dev        # starts Postgres + Mosquitto (Docker) + Django + MQTT listener + simulator
+make stop       # stops Docker when done
 ```
 
-Then in another terminal, run the station simulator (see `simulator/`).
+Other useful commands:
+```bash
+make test       # run test suite
+make migrate    # run migrations
+make seed       # re-seed dev data from simulator/fleet.yml
+make shell      # Django shell
+```
 
 ---
 
@@ -159,11 +169,11 @@ and marks them `TIMEOUT`. This is not yet implemented — tracked in roadmap.
 
 ## What Is Not Built Yet
 
-- Command timeout sweep job
+- Command timeout sweep job (commands have expires_at but nothing sweeps them yet)
 - SMS OTP (stubbed — returns OTP in response when DEBUG=True)
 - Telemetry reconciliation (handler exists, logic is TODO)
+- User simulator (simulator/user_sim/ is empty)
+- AWS Lambda ingestion function (mqtt_listener management command is the local analog)
+- AWS IoT Core setup (Things, certificates, policies, IoT Rules)
 - Payment processing
-- Admin tooling
 - Android/iOS apps
-- AWS Lambda ingestion function (local event_handler is the analog)
-- Station simulator (simulator/ directory is empty)
