@@ -27,6 +27,7 @@ def publish_unlock_command(command) -> timezone.datetime:
         "stationId": command.station_id,
         "dockId": command.dock.dock_index,
         "bikeId": command.bike_id,
+        "userId": str(command.user.phone),
         "ttlSec": settings.COMMAND_TTL_SECONDS,
         "ts": int(timezone.now().timestamp()),
     }

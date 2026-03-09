@@ -111,6 +111,13 @@ class Station:
         logger.info(f"[{self.station_id}] Bike {bike_id} docked at dock {dock_index}")
         return [self._bike_docked(dock_index, bike_id)]
 
+    def find_available_dock(self) -> Optional[int]:
+        """Return the index of an empty dock, or None if all are occupied."""
+        for index, bike in self.dock_state.items():
+            if bike is None:
+                return index
+        return None
+
     # --- private helpers ---
 
     def _should_fail(self) -> bool:

@@ -16,15 +16,14 @@ Usage:
 
     # Override broker host (e.g. if running outside Docker)
     python -m station_sim.main --host localhost --port 1883
-
-    # Simulate a single specific scenario then exit
-    python -m station_sim.main --scenario cross_station_ride
 """
 import argparse
 import json
 import logging
 import os
+import random
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -33,7 +32,7 @@ import paho.mqtt.client as mqtt
 # Allow running from simulator/ directory
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from station_sim.config import FleetConfig, StationConfig, load_fleet
+from station_sim.config import FleetConfig, StationConfig, UserConfig, load_fleet
 from station_sim.station import Station
 
 logging.basicConfig(
@@ -52,6 +51,11 @@ UNDOCK_DELAY_SEC = 1.5
 def build_fleet(config: FleetConfig) -> dict[str, Station]:
     """Build a Station instance for each station in the fleet config."""
     return {s.id: Station(s) for s in config.stations}
+
+
+def build_user_map(config: FleetConfig) -> dict[str, UserConfig]:
+    """Build a phone → UserConfig lookup for ride behavior."""
+    return {u.phone: u for u in config.users}
 
 
 def on_connect(client, userdata, flags, rc):
@@ -73,8 +77,12 @@ def on_message(client, userdata, msg):
 
     Parses the topic to identify which station it's for, hands off to
     the Station instance, then publishes each returned event back.
+
+    If the unlock succeeds, kicks off a background thread to simulate
+    the rider's journey and eventual bike return.
     """
     fleet: dict[str, Station] = userdata["fleet"]
+    user_map: dict[str, UserConfig] = userdata["user_map"]
 
     try:
         payload = json.loads(msg.payload.decode())
@@ -100,8 +108,130 @@ def on_message(client, userdata, msg):
     if command_type == "UNLOCK":
         events = station.handle_unlock_command(payload)
         _publish_events(client, station_id, events)
+
+        # If the unlock succeeded, simulate the rider's journey in a background thread.
+        # We check the first event — UNLOCK_RESULT with status SUCCESS.
+        unlock_succeeded = (
+            events
+            and events[0].get("type") == "UNLOCK_RESULT"
+            and events[0].get("status") == "SUCCESS"
+        )
+        if unlock_succeeded:
+            user_phone = payload.get("userId")
+            bike_id = payload["bikeId"]
+            user_config = user_map.get(user_phone)
+
+            if user_config is None:
+                logger.warning(
+                    f"No behavior config for user {user_phone} — bike {bike_id} will not be returned"
+                )
+                return
+
+            thread = threading.Thread(
+                target=_simulate_ride,
+                args=(client, fleet, bike_id, station_id, user_config),
+                daemon=True,
+            )
+            thread.start()
     else:
         logger.warning(f"Unknown command type: {command_type}")
+
+
+def _simulate_ride(
+    client: mqtt.Client,
+    fleet: dict[str, Station],
+    bike_id: str,
+    origin_station_id: str,
+    user: UserConfig,
+) -> None:
+    """
+    Runs in a background thread. Simulates a rider's journey after a successful unlock.
+
+    Behavior is driven entirely by the user's profile from fleet.yml:
+      commuter   — always rides to the same fixed destination station
+      explorer   — picks a random station each time
+      indecisive — returns to the same station they left from
+      ghost      — high chance of never returning the bike
+      tourist    — long ride, random destination
+
+    Steps:
+      1. Decide whether the rider returns the bike at all (no_return_rate)
+      2. Sleep for a random ride duration within the user's configured range
+      3. Pick a destination station based on behavior
+      4. Find an available dock at that station
+      5. Publish BIKE_DOCKED to close out the ride
+    """
+    logger.info(
+        f"[Ride] {user.phone} ({user.behavior}) — bike {bike_id} left {origin_station_id}"
+    )
+
+    # 1. Ghost check — does this rider ever return the bike?
+    if random.random() < user.no_return_rate:
+        logger.info(
+            f"[Ride] {user.phone} ({user.behavior}) — bike {bike_id} not returned (ghost ride)"
+        )
+        return
+
+    # 2. Sleep for ride duration
+    min_sec, max_sec = user.ride_duration_range
+    duration = random.uniform(min_sec, max_sec)
+    logger.info(
+        f"[Ride] {user.phone} ({user.behavior}) — riding for {duration:.0f}s, "
+        f"will return bike {bike_id}"
+    )
+    time.sleep(duration)
+
+    # 3. Pick destination station
+    destination_id = _pick_destination(fleet, origin_station_id, user)
+    if destination_id is None:
+        logger.warning(f"[Ride] No valid destination found for bike {bike_id} — not returned")
+        return
+
+    destination = fleet[destination_id]
+
+    # 4. Find an available dock
+    dock_index = destination.find_available_dock()
+    if dock_index is None:
+        logger.warning(
+            f"[Ride] No available dock at {destination_id} for bike {bike_id} — not returned"
+        )
+        return
+
+    # 5. Dock the bike and publish BIKE_DOCKED
+    events = destination.handle_bike_docked(dock_index, bike_id)
+    _publish_events(client, destination_id, events)
+    logger.info(
+        f"[Ride] {user.phone} ({user.behavior}) — bike {bike_id} returned to "
+        f"{destination_id} dock {dock_index}"
+    )
+
+
+def _pick_destination(
+    fleet: dict[str, Station],
+    origin_station_id: str,
+    user: UserConfig,
+) -> str | None:
+    """
+    Choose a destination station based on the user's behavior profile.
+
+      commuter   — always goes to commuter_destination (fixed in fleet.yml)
+      indecisive — returns to the same station they started from
+      explorer   — any station in the fleet, chosen at random (could be origin)
+      tourist    — same as explorer but the ride duration is longer (handled in fleet.yml)
+      ghost      — should never reach here (filtered out before this call)
+    """
+    if user.behavior == "commuter":
+        dest = user.commuter_destination
+        if dest not in fleet:
+            logger.warning(f"Commuter destination {dest} not in fleet — falling back to random")
+            return random.choice(list(fleet.keys()))
+        return dest
+
+    if user.behavior == "indecisive":
+        return origin_station_id
+
+    # explorer / tourist / fallback: random station from the full fleet
+    return random.choice(list(fleet.keys()))
 
 
 def _publish_events(client, station_id: str, events: list[dict]):
@@ -124,8 +254,8 @@ def _publish_events(client, station_id: str, events: list[dict]):
         logger.info(f"Published → {topic}: {event['type']}")
 
 
-def run(host: str, port: int, fleet: dict[str, Station]):
-    client = mqtt.Client(userdata={"fleet": fleet})
+def run(host: str, port: int, fleet: dict[str, Station], user_map: dict[str, UserConfig]):
+    client = mqtt.Client(userdata={"fleet": fleet, "user_map": user_map})
     client.on_connect = on_connect
     client.on_message = on_message
 
@@ -155,11 +285,15 @@ def main():
 
     config = load_fleet(Path(args.fleet))
     fleet = build_fleet(config)
+    user_map = build_user_map(config)
 
     station_list = ", ".join(f"{s} ({fleet[s].config.behavior})" for s in fleet)
     logger.info(f"Simulating fleet: {station_list}")
 
-    run(args.host, args.port, fleet)
+    user_list = ", ".join(f"{u.phone} ({u.behavior})" for u in config.users)
+    logger.info(f"User profiles: {user_list}")
+
+    run(args.host, args.port, fleet, user_map)
 
 
 if __name__ == "__main__":

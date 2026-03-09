@@ -30,6 +30,10 @@ class StationConfig:
 @dataclass
 class UserConfig:
     phone: str
+    behavior: str = "explorer"          # commuter | explorer | indecisive | ghost | tourist
+    ride_duration_range: tuple = (30, 120)  # (min_sec, max_sec)
+    no_return_rate: float = 0.05        # probability of never returning the bike
+    commuter_destination: str = ""      # fixed destination station ID (commuter only)
 
 
 @dataclass
@@ -62,6 +66,15 @@ def load_fleet(path: Path) -> FleetConfig:
             )
         )
 
-    users = [UserConfig(phone=u["phone"]) for u in raw.get("users", [])]
+    users = [
+        UserConfig(
+            phone=u["phone"],
+            behavior=u.get("behavior", "explorer"),
+            ride_duration_range=tuple(u.get("ride_duration_range", [30, 120])),
+            no_return_rate=u.get("no_return_rate", 0.05),
+            commuter_destination=u.get("commuter_destination", ""),
+        )
+        for u in raw.get("users", [])
+    ]
 
     return FleetConfig(stations=stations, users=users)

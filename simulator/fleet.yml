@@ -10,6 +10,13 @@
 #   flaky           - succeeds most of the time, fails randomly (set fail_rate)
 #   slow            - succeeds but takes longer than normal (use delay_sec)
 #   timeout         - never responds (simulates station going offline)
+#
+# User behavior modes:
+#   commuter    - always rides the same route (origin → commuter_destination)
+#   explorer    - docks at a random station each time
+#   indecisive  - returns to the same station they left from
+#   ghost       - high probability of never returning the bike
+#   tourist     - long rides, always picks a random station
 
 stations:
   - id: "S001"
@@ -76,6 +83,21 @@ stations:
         bike_id: null
 
 users:
+  # Commuter: same route every day, S001 → S004, always returns the bike
   - phone: "+15550000001"
+    behavior: commuter
+    commuter_destination: "S004"
+    ride_duration_range: [15, 30]   # seconds (reduce for faster local testing)
+    no_return_rate: 0.0
+
+  # Explorer: unpredictable — different station each time, occasionally forgets to dock
   - phone: "+15550000002"
+    behavior: explorer
+    ride_duration_range: [10, 25]
+    no_return_rate: 0.15
+
+  # Ghost: takes bikes and rarely brings them back
   - phone: "+15550000003"
+    behavior: ghost
+    ride_duration_range: [20, 40]
+    no_return_rate: 0.8
