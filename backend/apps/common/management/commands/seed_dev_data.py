@@ -21,7 +21,7 @@ from apps.stations.models import Dock, DockState, Station, StationStatus
 from apps.users.models import User
 
 
-FLEET_YML_DEFAULT = Path(__file__).resolve().parents[7] / "simulator" / "fleet.yml"
+FLEET_YML_DEFAULT = Path(__file__).resolve().parents[5] / "simulator" / "fleet.yml"
 
 
 class Command(BaseCommand):

@@ -5,9 +5,9 @@ from apps.commands.models import Command
 
 class CommandSerializer(serializers.ModelSerializer):
     request_id = serializers.UUIDField()
-    station_id = serializers.CharField(source="station_id")
+    station_id = serializers.CharField()
     dock_index = serializers.IntegerField(source="dock.dock_index")
-    bike_id = serializers.CharField(source="bike_id", allow_null=True)
+    bike_id = serializers.CharField(allow_null=True)
     # ride_id is injected by the view when status==SUCCESS
     ride_id = serializers.SerializerMethodField()
 

@@ -17,11 +17,11 @@ setup:
 
 # Start infrastructure (Postgres + Mosquitto) in background
 infra:
-	docker compose up -d
+	docker compose up -d db mosquitto
 
 # Start the full dev stack — infra + all app processes via honcho
 dev: infra
-	cd backend && DJANGO_SETTINGS_MODULE=bikeshare.settings.local .venv/bin/honcho start -f ../Procfile
+	DJANGO_SETTINGS_MODULE=bikeshare.settings.local backend/.venv/bin/honcho start -f Procfile
 
 # Stop infrastructure
 stop:

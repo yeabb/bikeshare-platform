@@ -80,7 +80,7 @@ def create_unlock_command(user, bike_id: str):
 
 def handle_unlock_result(request_id: str, status: str, reason: str = None) -> None:
     """
-    Process an UNLOCK_RESULT event from a station.
+    Process an UNLOCK_RESULT event from a station and updates Command status
 
     Idempotent: silently ignores if command is already resolved.
 

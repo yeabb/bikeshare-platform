@@ -22,7 +22,7 @@ import random
 import time
 from typing import Optional
 
-from simulator.station_sim.config import StationConfig
+from station_sim.config import StationConfig
 
 logger = logging.getLogger(__name__)
 
