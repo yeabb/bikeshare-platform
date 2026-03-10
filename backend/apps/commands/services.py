@@ -129,6 +129,45 @@ def handle_unlock_result(request_id: str, status: str, reason: str = None) -> No
             )
 
 
+def sweep_timed_out_commands() -> int:
+    """
+    Find all PENDING commands past their expires_at and mark them TIMEOUT.
+    Also restores the dock back to OCCUPIED so it can be used again.
+
+    Returns the number of commands swept.
+
+    Called by the sweep_timeouts management command on a loop.
+    In production this would be a Lambda scheduled rule instead.
+    """
+    now = timezone.now()
+
+    with transaction.atomic():
+        stale = (
+            Command.objects.select_related("dock")
+            .select_for_update()
+            .filter(status=CommandStatus.PENDING, expires_at__lt=now)
+        )
+
+        count = 0
+        for command in stale:
+            command.status = CommandStatus.TIMEOUT
+            command.resolved_at = now
+            command.save(update_fields=["status", "resolved_at", "updated_at"])
+
+            # Restore dock — it was moved to UNLOCKING when the command was created
+            dock = command.dock
+            dock.state = DockState.OCCUPIED
+            dock.save(update_fields=["state", "updated_at"])
+
+            logger.warning(
+                f"Command {command.request_id} → TIMEOUT. "
+                f"Dock {dock.display_id} → OCCUPIED."
+            )
+            count += 1
+
+    return count
+
+
 def _get_ttl_seconds() -> int:
     from django.conf import settings
     return getattr(settings, "COMMAND_TTL_SECONDS", 10)
