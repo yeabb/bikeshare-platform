@@ -86,6 +86,7 @@ users:
   # Commuter: same route every day, S001 → S004, always returns the bike
   - phone: "+15550000001"
     behavior: commuter
+    bike_id: "B001"                 # default bike for user simulator
     commuter_destination: "S004"
     ride_duration_range: [15, 30]   # seconds (reduce for faster local testing)
     no_return_rate: 0.0
@@ -93,11 +94,13 @@ users:
   # Explorer: unpredictable — different station each time, occasionally forgets to dock
   - phone: "+15550000002"
     behavior: explorer
+    bike_id: "B004"                 # default bike for user simulator (flaky station)
     ride_duration_range: [10, 25]
     no_return_rate: 0.15
 
   # Ghost: takes bikes and rarely brings them back
   - phone: "+15550000003"
     behavior: ghost
+    bike_id: "B002"                 # default bike for user simulator
     ride_duration_range: [20, 40]
     no_return_rate: 0.8

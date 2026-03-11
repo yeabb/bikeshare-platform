@@ -48,6 +48,7 @@ This is updated by:
 | Timeout sweep | `apps/commands/management/commands/sweep_timeouts.py` | Local dev only — marks stale PENDING commands TIMEOUT (CloudWatch + Lambda does this in production) |
 | Seed script | `apps/common/management/commands/seed_dev_data.py` | Populates DB from simulator/fleet.yml |
 | Station simulator | `simulator/station_sim/main.py` | Simulates fleet of stations over MQTT (local dev only) |
+| User simulator | `simulator/user_sim/main.py` | Drives the HTTP API flow for each user in fleet.yml (auth → unlock → poll). Replaces manual curl commands for local testing. |
 
 ---
 
@@ -148,6 +149,31 @@ make shell      # Django shell
 
 ---
 
+## Two Simulators — How They Divide the Work
+
+There are two simulators and they have strictly separate responsibilities:
+
+**Station simulator** (`simulator/station_sim/`) — runs as the `sim` process in Procfile
+- Connects to Mosquitto over MQTT
+- Listens for UNLOCK commands published by the backend
+- Responds with UNLOCK_RESULT and BIKE_UNDOCKED events
+- Runs a background thread per successful ride to simulate the rider's journey, then publishes BIKE_DOCKED when the bike is returned
+- Knows nothing about HTTP
+
+**User simulator** (`simulator/user_sim/`) — run manually in a second terminal when you want to test without curl
+- Talks to the Django backend over HTTP only
+- Authenticates each user (request-otp → verify-otp → JWT)
+- Calls POST /commands/unlock to start a ride
+- Polls GET /commands/{request_id} until the command reaches a terminal state
+- If SUCCESS, polls GET /me/active-ride until the ride ends
+- Knows nothing about MQTT
+
+**Together**: user_sim triggers the HTTP unlock → backend publishes MQTT → station_sim responds → backend processes the event → ride starts → station_sim docks the bike → ride ends. user_sim just watches the API side of this chain.
+
+**fleet.yml is the shared config.** Both simulators read it. Each user entry has a `bike_id` field so the user simulator knows which bike to unlock by default. Each station entry has a `behavior` field so the station simulator knows how to respond.
+
+---
+
 ## Command Timeout
 
 Commands have `expires_at = created_at + 10s`. A background sweep queries:
@@ -180,7 +206,6 @@ Celery is worth adding when you need retry logic and queuing for async tasks lik
 
 - SMS OTP (stubbed — returns OTP in response when DEBUG=True)
 - Telemetry reconciliation (`_handle_telemetry` stub exists in `event_handler.py`, `reconcile_telemetry()` in `stations/services.py` is TODO)
-- User simulator (simulator/user_sim/ is empty)
 - AWS Lambda ingestion function (mqtt_listener management command is the local analog)
 - AWS Lambda timeout sweep (sweep_timeouts management command is the local analog)
 - AWS IoT Core setup (Things, certificates, policies, IoT Rules)

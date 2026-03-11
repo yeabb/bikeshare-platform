@@ -31,6 +31,7 @@ class StationConfig:
 class UserConfig:
     phone: str
     behavior: str = "explorer"          # commuter | explorer | indecisive | ghost | tourist
+    bike_id: str = ""                   # default bike for user simulator (optional)
     ride_duration_range: tuple = (30, 120)  # (min_sec, max_sec)
     no_return_rate: float = 0.05        # probability of never returning the bike
     commuter_destination: str = ""      # fixed destination station ID (commuter only)
@@ -70,6 +71,7 @@ def load_fleet(path: Path) -> FleetConfig:
         UserConfig(
             phone=u["phone"],
             behavior=u.get("behavior", "explorer"),
+            bike_id=u.get("bike_id", ""),
             ride_duration_range=tuple(u.get("ride_duration_range", [30, 120])),
             no_return_rate=u.get("no_return_rate", 0.05),
             commuter_destination=u.get("commuter_destination", ""),

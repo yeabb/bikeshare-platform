@@ -1,3 +1,18 @@
+# Bikeshare Platform
+
+A dock-based bike sharing system. Riders scan a bike QR code, the backend locates the dock, sends an unlock command to the station over MQTT, and the station responds with the result. Ride ends when the bike is physically docked at any station.
+
+See [`docs/system-architecture.md`](docs/system-architecture.md) for full architecture diagrams and design decisions.
+
+---
+
+## Prerequisites
+
+- Python 3.11+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (for Postgres + Mosquitto)
+- Node.js (only if you use the gitmoji commit hook)
+
+---
 
 ## First-time setup
 
@@ -23,13 +38,22 @@ Make sure Docker Desktop is running, then:
 make dev
 ```
 
-This starts three processes via honcho:
+This starts four processes via honcho:
 
 | Process | What it does |
 |---------|-------------|
 | `api` | Django dev server on `localhost:8000` |
 | `listener` | MQTT listener — bridges Mosquitto events into Django (local Lambda equivalent) |
+| `sweep` | Timeout sweep — marks stale PENDING commands as TIMEOUT every 5s (local CloudWatch equivalent) |
 | `sim` | Station simulator — simulates the fleet of stations over MQTT |
+
+Wait until you see all of these in the output:
+```
+api.1      | Watching for file changes with StatReloader
+sim.1      | Connected to MQTT broker
+sim.1      | User profiles: +15550000001 (commuter), +15550000002 (explorer), +15550000003 (ghost)
+sweep.1    | Timeout sweep started — running every 5s
+```
 
 To stop Docker when done:
 
@@ -40,6 +64,8 @@ make stop
 ---
 
 ## Testing the unlock flow end to end
+
+You need two terminals. **Terminal 1** runs `make dev`. **Terminal 2** runs the curl commands below. After step 3, switch your eyes back to Terminal 1 to watch the ride play out automatically.
 
 ### 1. Request an OTP
 
@@ -60,48 +86,42 @@ In local dev, the OTP is returned directly in the response (no SMS sent):
 ```bash
 curl -X POST http://localhost:8000/api/v1/auth/verify-otp \
   -H "Content-Type: application/json" \
-  -d '{"phone": "+15550000001", "otp": "123456"}'
+  -d '{"phone": "+15550000001", "otp": "PASTE_OTP_HERE"}'
 ```
 
-Response:
-
-```json
-{
-  "access": "<your-jwt-token>",
-  "refresh": "...",
-  "user": {"id": "...", "phone": "+15550000001"}
-}
-```
+Copy the `access` token from the response.
 
 ### 3. Unlock a bike
 
-Bike `B001` is at station `S001` which is configured as `always_success`.
+Bike `B001` is at station `S001` (`always_success`). User `+15550000001` is a commuter — always rides to S004.
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/commands/unlock \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <your-jwt-token>" \
+  -H "Authorization: Bearer PASTE_TOKEN_HERE" \
   -d '{"bike_id": "B001"}'
 ```
 
-Response (immediate, before the station has responded):
+You'll get back `status: PENDING` and a `request_id`. Now switch to Terminal 1 and watch — within a few seconds you'll see:
 
-```json
-{
-  "request_id": "...",
-  "status": "PENDING",
-  ...
-}
+```
+sim.1    | [S001] Unlock SUCCESS for bike B001
+sim.1    | Published → station/S001/events: UNLOCK_RESULT
+sim.1    | Published → station/S001/events: BIKE_UNDOCKED
+sim.1    | [Ride] +15550000001 (commuter) — riding for 24s, will return bike B001
+          ... wait ...
+sim.1    | [Ride] Bike B001 returned to S004 dock 2
+sim.1    | Published → station/S004/events: BIKE_DOCKED
 ```
 
-### 4. Poll for the result
+The ride completes automatically. No further action needed.
+
+### 4. (Optional) Poll for the result
 
 ```bash
-curl http://localhost:8000/api/v1/commands/<request_id> \
-  -H "Authorization: Bearer <your-jwt-token>"
+curl http://localhost:8000/api/v1/commands/PASTE_REQUEST_ID_HERE \
+  -H "Authorization: Bearer PASTE_TOKEN_HERE"
 ```
-
-Once the station simulator responds (usually within 1-2 seconds):
 
 ```json
 {
@@ -114,22 +134,63 @@ Once the station simulator responds (usually within 1-2 seconds):
 
 ---
 
+## Testing the timeout scenario
+
+Bike `B007` is at station `S004` which is configured as `timeout` — it never responds to unlock commands.
+
+Repeat steps 1-3 above using `+15550000001` and `bike_id: B007`. After 10 seconds (the command TTL) you'll see in Terminal 1:
+
+```
+sim.1    | [S004] Simulating timeout — not responding
+sweep.1  | Command ... → TIMEOUT. Dock S004-D01 → OCCUPIED.
+sweep.1  | Swept 1 timed-out command(s) → TIMEOUT
+```
+
+The command is marked `TIMEOUT`, the dock is restored to `OCCUPIED`, and the user is unblocked.
+
+---
+
 ## Test users and fleet
 
 Seeded from `simulator/fleet.yml`:
 
-| Phone | Use |
-|-------|-----|
-| `+15550000001` | Test user 1 |
-| `+15550000002` | Test user 2 |
-| `+15550000003` | Test user 3 |
+| Phone | Behavior | What they do |
+|-------|----------|-------------|
+| `+15550000001` | `commuter` | Always rides to S004, always returns the bike |
+| `+15550000002` | `explorer` | Random destination, 15% chance of not returning |
+| `+15550000003` | `ghost` | Random destination, 80% chance of never returning |
 
-| Station | Bikes | Behavior |
+| Station | Bikes | Unlock behavior |
 |---------|-------|----------|
 | `S001` — Market & 5th | B001, B002, B003 | `always_success` |
 | `S002` — Mission & 16th | B004, B005 | `flaky` (30% fail rate) |
 | `S003` — Castro & Market | B006 | `always_fail` |
 | `S004` — Caltrain Station | B007 | `timeout` (never responds) |
+
+---
+
+## Testing with the user simulator
+
+Instead of running curl commands manually, use the user simulator to drive the full HTTP flow automatically. It authenticates, unlocks a bike, polls for the result, and waits for the ride to end.
+
+**Terminal 1** — run the stack:
+```bash
+make dev
+```
+
+**Terminal 2** — run the user simulator:
+```bash
+# All three users concurrently (each uses their default bike from fleet.yml)
+cd simulator && .venv/bin/python -m user_sim.main
+
+# Single user
+cd simulator && .venv/bin/python -m user_sim.main --user +15550000001
+
+# Override bike (useful after re-seeding when bikes have moved)
+cd simulator && .venv/bin/python -m user_sim.main --user +15550000001 --bike B001
+```
+
+Watch Terminal 1 for the station events, ride lifecycle, and sweep activity.
 
 ---
 
@@ -150,7 +211,7 @@ make shell      # open a Django shell
 bikeshare-platform/
 ├── backend/                  # Django backend
 │   ├── apps/
-│   │   ├── commands/         # Unlock command lifecycle
+│   │   ├── commands/         # Unlock command lifecycle + timeout sweep
 │   │   ├── rides/            # Ride start and end
 │   │   ├── stations/         # Station and dock state
 │   │   ├── bikes/            # Bike state
@@ -158,9 +219,10 @@ bikeshare-platform/
 │   │   └── iot/              # MQTT publisher and event handler
 │   ├── bikeshare/settings/   # base / local / production / test
 │   └── requirements/         # base / local / production
-├── simulator/                # Station simulator (local dev only)
-│   ├── fleet.yml             # Fleet config — stations, docks, bikes
-│   └── station_sim/          # Simulator code
+├── simulator/                # Station and user simulators (local dev only)
+│   ├── fleet.yml             # Fleet config — stations, docks, bikes, user behaviors
+│   ├── station_sim/          # Station simulator — responds to MQTT unlock commands
+│   └── user_sim/             # User simulator — drives the HTTP API flow
 ├── docs/                     # Architecture, API, MQTT protocol, state machines
 ├── mosquitto/                # Mosquitto broker config
 ├── docker-compose.yml        # Postgres + Mosquitto
