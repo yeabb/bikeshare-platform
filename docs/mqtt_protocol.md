@@ -260,9 +260,10 @@ This is a safety-net reconciliation snapshot. The backend uses it to catch misse
 **Dock state values in telemetry:** `OCCUPIED | AVAILABLE | UNLOCKING | FAULT`
 
 **Backend behavior:**
-- Reconcile each dock in the snapshot against DB state
-- On discrepancy: update DB to match physical reality (telemetry wins)
-- Do not end/start rides from telemetry — only from explicit events
+- Update `Station.last_telemetry_at` — used by station heartbeat monitoring to detect downed stations
+- If station was `INACTIVE` (flagged as down), restore it to `ACTIVE`
+- Reconcile each dock in the snapshot against DB state — on discrepancy, update DB to match physical reality (telemetry wins)
+- Do not end rides from telemetry — only explicit `BIKE_DOCKED` events do that (stale ride reconciliation via two-snapshot confirmation is a planned enhancement)
 
 ---
 

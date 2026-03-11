@@ -38,21 +38,23 @@ Make sure Docker Desktop is running, then:
 make dev
 ```
 
-This starts four processes via honcho:
+This starts five processes via honcho:
 
 | Process | What it does |
 |---------|-------------|
 | `api` | Django dev server on `localhost:8000` |
 | `listener` | MQTT listener — bridges Mosquitto events into Django (local Lambda equivalent) |
 | `sweep` | Timeout sweep — marks stale PENDING commands as TIMEOUT every 5s (local CloudWatch equivalent) |
-| `sim` | Station simulator — simulates the fleet of stations over MQTT |
+| `heartbeat` | Station heartbeat — marks silent stations INACTIVE every 60s (local CloudWatch equivalent) |
+| `sim` | Station simulator — simulates the fleet of stations over MQTT, publishes telemetry every 30s |
 
 Wait until you see all of these in the output:
 ```
-api.1      | Watching for file changes with StatReloader
-sim.1      | Connected to MQTT broker
-sim.1      | User profiles: +15550000001 (commuter), +15550000002 (explorer), +15550000003 (ghost)
-sweep.1    | Timeout sweep started — running every 5s
+api.1           | Watching for file changes with StatReloader
+sim.1           | Connected to MQTT broker
+sim.1           | User profiles: +15550000001 (commuter), +15550000002 (explorer), +15550000003 (ghost)
+sweep.1         | Timeout sweep started — running every 5s
+heartbeat.1     | Station heartbeat started — running every 60s
 ```
 
 To stop Docker when done:

@@ -46,8 +46,9 @@ This is updated by:
 | Dock events | `apps/stations/services.py` | `handle_bike_undocked`, `handle_dock_fault`, etc. |
 | MQTT listener | `apps/iot/management/commands/mqtt_listener.py` | Local dev only — bridges Mosquitto → event_handler (Lambda does this in production) |
 | Timeout sweep | `apps/commands/management/commands/sweep_timeouts.py` | Local dev only — marks stale PENDING commands TIMEOUT (CloudWatch + Lambda does this in production) |
+| Station heartbeat | `apps/stations/management/commands/station_heartbeat.py` | Local dev only — marks silent stations INACTIVE every 60s (CloudWatch + Lambda does this in production) |
 | Seed script | `apps/common/management/commands/seed_dev_data.py` | Populates DB from simulator/fleet.yml |
-| Station simulator | `simulator/station_sim/main.py` | Simulates fleet of stations over MQTT (local dev only) |
+| Station simulator | `simulator/station_sim/main.py` | Simulates fleet of stations over MQTT (local dev only) — publishes STATION_TELEMETRY every 30s |
 | User simulator | `simulator/user_sim/main.py` | Drives the HTTP API flow for each user in fleet.yml (auth → unlock → poll). Replaces manual curl commands for local testing. |
 
 ---
@@ -59,7 +60,7 @@ This is updated by:
 User: id (UUID), phone (unique), status, otp_code, otp_expires_at
 
 # apps/stations/models.py
-Station: id (str PK e.g. "S001"), name, lat, lng, status, total_docks
+Station: id (str PK e.g. "S001"), name, lat, lng, status, total_docks, last_telemetry_at (nullable)
 Dock: station (FK), dock_index (int, 1-based), state, current_bike (FK→Bike, nullable), fault_code
 
 # apps/bikes/models.py
@@ -174,6 +175,24 @@ There are two simulators and they have strictly separate responsibilities:
 
 ---
 
+## Station Heartbeat Monitoring
+
+`Station.last_telemetry_at` is updated every time `reconcile_telemetry()` runs for a station. A background sweep (`station_heartbeat_check()`) runs every 60 seconds and marks stations `INACTIVE` if:
+
+- `last_telemetry_at` is older than **90 seconds** (3 missed 30s reports), OR
+- `last_telemetry_at` is null AND `created_at` is older than **5 minutes** (grace period for new stations coming online)
+
+When a station comes back online and resumes sending telemetry, `reconcile_telemetry()` automatically restores it to `ACTIVE`.
+
+**Ops endpoint:** `GET /api/v1/stations/inactive` — lists all currently downed stations with their `last_telemetry_at`.
+
+**Implementation:**
+- Logic: `apps/stations/services.py:station_heartbeat_check()`
+- Local runner: `python manage.py station_heartbeat` — runs as the `heartbeat` process in Procfile
+- Production: CloudWatch Scheduled Rule triggers a Lambda every 60 seconds
+
+---
+
 ## Command Timeout
 
 Commands have `expires_at = created_at + 10s`. A background sweep queries:
@@ -198,17 +217,17 @@ Celery is worth adding when you need retry logic and queuing for async tasks lik
 
 - `apps/commands/tests.py` — command creation, UNLOCK_RESULT handling, idempotency
 - `apps/rides/tests.py` — ride start, ride end via BIKE_DOCKED, idempotency
-- `apps/stations/tests.py` — dock state transitions
+- `apps/stations/tests.py` — dock state transitions, telemetry reconciliation, heartbeat check, inactive endpoint
 
 ---
 
 ## What Is Not Built Yet
 
 - SMS OTP (stubbed — returns OTP in response when DEBUG=True)
-- Telemetry reconciliation (`_handle_telemetry` stub exists in `event_handler.py`, `reconcile_telemetry()` in `stations/services.py` is TODO)
+- Stale ride reconciliation (rides stuck ACTIVE when BIKE_DOCKED event missed — needs two-snapshot telemetry confirmation)
 - AWS Lambda ingestion function (mqtt_listener management command is the local analog)
-- AWS Lambda timeout sweep (sweep_timeouts management command is the local analog)
+- AWS Lambda timeout sweep + heartbeat (sweep_timeouts and station_heartbeat management commands are the local analogs)
 - AWS IoT Core setup (Things, certificates, policies, IoT Rules)
-- CloudWatch Scheduled Rule for timeout sweep
+- CloudWatch Scheduled Rules for timeout sweep + station heartbeat
 - Payment processing
 - Android/iOS apps
