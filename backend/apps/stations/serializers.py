@@ -22,3 +22,11 @@ class StationStateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Station
         fields = ["station_id", "name", "status", "lat", "lng", "docks"]
+
+
+class InactiveStationSerializer(serializers.ModelSerializer):
+    station_id = serializers.CharField(source="id")
+
+    class Meta:
+        model = Station
+        fields = ["station_id", "name", "lat", "lng", "last_telemetry_at", "created_at"]

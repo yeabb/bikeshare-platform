@@ -1,9 +1,9 @@
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.stations.models import Station
-from apps.stations.serializers import StationStateSerializer
+from apps.stations.models import Station, StationStatus
+from apps.stations.serializers import InactiveStationSerializer, StationStateSerializer
 
 
 class StationStateView(APIView):
@@ -18,3 +18,20 @@ class StationStateView(APIView):
             return Response({"error": "NOT_FOUND"}, status=404)
 
         return Response(StationStateSerializer(station).data)
+
+
+class InactiveStationsView(APIView):
+    """
+    Ops endpoint — lists all stations currently marked INACTIVE.
+    Used by on-call ops to see which stations need physical attention.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        stations = Station.objects.filter(
+            status=StationStatus.INACTIVE
+        ).order_by("last_telemetry_at")
+        return Response({
+            "count": stations.count(),
+            "stations": InactiveStationSerializer(stations, many=True).data,
+        })

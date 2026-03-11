@@ -19,6 +19,9 @@ class Station(TimeStampedModel):
         max_length=20, choices=StationStatus.choices, default=StationStatus.ACTIVE
     )
     total_docks = models.IntegerField(default=0)
+    # Updated every time STATION_TELEMETRY is received from this station.
+    # Null means the station has never reported since being added to the DB.
+    last_telemetry_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "stations"

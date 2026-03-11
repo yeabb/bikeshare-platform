@@ -4,8 +4,8 @@ from django.utils import timezone
 from apps.bikes.models import Bike, BikeStatus
 from apps.commands.models import Command, CommandStatus
 from apps.rides.models import Ride, RideStatus
-from apps.stations.models import Dock, DockState, Station
-from apps.stations.services import reconcile_telemetry
+from apps.stations.models import Dock, DockState, Station, StationStatus
+from apps.stations.services import reconcile_telemetry, station_heartbeat_check
 from apps.users.models import User
 
 
@@ -213,3 +213,136 @@ class ReconcileTelemetryCorrectionTests(TestCase):
         self.assertIsNone(dock1.current_bike_id)
         self.assertEqual(dock2.state, DockState.FAULT)
         self.assertEqual(dock2.fault_code, "SENSOR_ERROR")
+
+
+class ReconcileTelemetryHeartbeatTests(TestCase):
+    """reconcile_telemetry() should update last_telemetry_at and restore INACTIVE stations."""
+
+    def test_updates_last_telemetry_at(self):
+        station = make_station()
+        self.assertIsNone(station.last_telemetry_at)
+
+        reconcile_telemetry("S001", [])
+
+        station.refresh_from_db()
+        self.assertIsNotNone(station.last_telemetry_at)
+
+    def test_restores_inactive_station_to_active(self):
+        station = make_station()
+        station.status = StationStatus.INACTIVE
+        station.save()
+
+        reconcile_telemetry("S001", [])
+
+        station.refresh_from_db()
+        self.assertEqual(station.status, StationStatus.ACTIVE)
+
+    def test_unknown_station_does_not_raise(self):
+        reconcile_telemetry("UNKNOWN", [])  # should silently return
+
+
+class StationHeartbeatCheckTests(TestCase):
+    """station_heartbeat_check() flags silent stations as INACTIVE."""
+
+    def test_flags_stale_station(self):
+        """Station with last_telemetry_at older than 90s is marked INACTIVE."""
+        station = make_station()
+        station.last_telemetry_at = timezone.now() - timezone.timedelta(seconds=120)
+        station.save()
+
+        count = station_heartbeat_check()
+
+        self.assertEqual(count, 1)
+        station.refresh_from_db()
+        self.assertEqual(station.status, StationStatus.INACTIVE)
+
+    def test_does_not_flag_recent_station(self):
+        """Station that reported recently is left ACTIVE."""
+        station = make_station()
+        station.last_telemetry_at = timezone.now() - timezone.timedelta(seconds=30)
+        station.save()
+
+        count = station_heartbeat_check()
+
+        self.assertEqual(count, 0)
+        station.refresh_from_db()
+        self.assertEqual(station.status, StationStatus.ACTIVE)
+
+    def test_flags_never_reported_past_grace_period(self):
+        """Station that never reported and was created more than 5 min ago is flagged."""
+        station = make_station()
+        # Backdate created_at past the grace period
+        Station.objects.filter(id="S001").update(
+            created_at=timezone.now() - timezone.timedelta(minutes=10)
+        )
+
+        count = station_heartbeat_check()
+
+        self.assertEqual(count, 1)
+        station.refresh_from_db()
+        self.assertEqual(station.status, StationStatus.INACTIVE)
+
+    def test_does_not_flag_never_reported_within_grace_period(self):
+        """Brand new station that hasn't reported yet is given a grace period."""
+        make_station()  # just created — created_at is now
+
+        count = station_heartbeat_check()
+
+        self.assertEqual(count, 0)
+
+    def test_does_not_flag_already_inactive_station(self):
+        """Already INACTIVE stations are not re-processed."""
+        station = make_station()
+        station.status = StationStatus.INACTIVE
+        station.last_telemetry_at = timezone.now() - timezone.timedelta(seconds=120)
+        station.save()
+
+        count = station_heartbeat_check()
+
+        self.assertEqual(count, 0)
+
+    def test_flags_multiple_stale_stations(self):
+        """All stale stations in one pass."""
+        for sid in ["S001", "S002", "S003"]:
+            s = Station.objects.create(id=sid, name=sid, lat=0, lng=0, total_docks=1)
+            s.last_telemetry_at = timezone.now() - timezone.timedelta(seconds=120)
+            s.save()
+
+        count = station_heartbeat_check()
+
+        self.assertEqual(count, 3)
+
+
+class InactiveStationsEndpointTests(TestCase):
+    """GET /api/v1/stations/inactive returns currently downed stations."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(phone="+15550000001")
+        from rest_framework_simplejwt.tokens import AccessToken
+        self.token = str(AccessToken.for_user(self.user))
+
+    def _get(self):
+        return self.client.get(
+            "/api/v1/stations/inactive",
+            HTTP_AUTHORIZATION=f"Bearer {self.token}",
+        )
+
+    def test_returns_empty_when_all_active(self):
+        make_station()
+        resp = self._get()
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["count"], 0)
+
+    def test_returns_inactive_stations(self):
+        station = make_station()
+        station.status = StationStatus.INACTIVE
+        station.save()
+
+        resp = self._get()
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["count"], 1)
+        self.assertEqual(resp.json()["stations"][0]["station_id"], "S001")
+
+    def test_requires_authentication(self):
+        resp = self.client.get("/api/v1/stations/inactive")
+        self.assertEqual(resp.status_code, 401)

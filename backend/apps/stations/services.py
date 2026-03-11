@@ -1,8 +1,9 @@
 import logging
 
 from django.db import transaction
+from django.utils import timezone
 
-from apps.stations.models import Dock, DockState, Station
+from apps.stations.models import Dock, DockState, Station, StationStatus
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,20 @@ def reconcile_telemetry(station_id: str, docks_snapshot: list[dict]) -> None:
     Called every 30s per station. Must be a no-op when states already agree.
     """
     with transaction.atomic():
+        # Update last_telemetry_at every time we hear from this station.
+        # If the station was INACTIVE (flagged as down), restore it to ACTIVE now
+        # that it's reporting again.
+        try:
+            station = Station.objects.get(id=station_id)
+            if station.status == StationStatus.INACTIVE:
+                station.status = StationStatus.ACTIVE
+                logger.info(f"Station {station_id} is back online — restored to ACTIVE")
+            station.last_telemetry_at = timezone.now()
+            station.save(update_fields=["last_telemetry_at", "status", "updated_at"])
+        except Station.DoesNotExist:
+            logger.warning(f"Telemetry received for unknown station {station_id} — skipping")
+            return
+
         for snap in docks_snapshot:
             dock_index = snap["dockId"]
             tel_state = snap["state"]       # OCCUPIED | AVAILABLE | UNLOCKING | FAULT
@@ -176,6 +191,53 @@ def reconcile_telemetry(station_id: str, docks_snapshot: list[dict]) -> None:
                     "missed BIKE_DOCKED event. Active ride NOT ended — manual resolution required."
                 )
                 continue
+
+
+def station_heartbeat_check() -> int:
+    """
+    Checks all ACTIVE stations for signs of life. Marks any silent station INACTIVE.
+
+    A station is considered silent if:
+    - last_telemetry_at is older than TELEMETRY_TIMEOUT_SEC (90s — 3 missed reports), OR
+    - last_telemetry_at is null AND the station was created more than
+      STATION_GRACE_PERIOD_SEC (5 min) ago — gives new stations time to come online
+
+    Called every 60s by:
+    - Local: station_heartbeat management command (Procfile)
+    - Production: CloudWatch Scheduled Rule → Lambda
+
+    Returns the number of stations marked INACTIVE.
+    """
+    TELEMETRY_TIMEOUT_SEC = 90
+    STATION_GRACE_PERIOD_SEC = 300  # 5 minutes
+
+    now = timezone.now()
+    stale_cutoff = now - timezone.timedelta(seconds=TELEMETRY_TIMEOUT_SEC)
+    grace_cutoff = now - timezone.timedelta(seconds=STATION_GRACE_PERIOD_SEC)
+
+    stations = Station.objects.filter(status=StationStatus.ACTIVE)
+    count = 0
+
+    for station in stations:
+        is_stale = (
+            station.last_telemetry_at is not None
+            and station.last_telemetry_at < stale_cutoff
+        )
+        is_never_reported_past_grace = (
+            station.last_telemetry_at is None
+            and station.created_at < grace_cutoff
+        )
+
+        if is_stale or is_never_reported_past_grace:
+            station.status = StationStatus.INACTIVE
+            station.save(update_fields=["status", "updated_at"])
+            logger.warning(
+                f"Station {station.id} ({station.name}) marked INACTIVE — "
+                f"last telemetry: {station.last_telemetry_at or 'never'}"
+            )
+            count += 1
+
+    return count
 
 
 def _resolve_bike(bike_id: str | None, display_id: str):
