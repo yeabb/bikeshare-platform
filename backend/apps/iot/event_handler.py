@@ -91,8 +91,12 @@ def _handle_dock_fault_cleared(payload: dict) -> None:
 
 
 def _handle_telemetry(payload: dict) -> None:
-    # TODO: implement telemetry reconciliation against DB state
-    logger.info(f"Received telemetry from station {payload.get('stationId')}")
+    from apps.stations.services import reconcile_telemetry
+
+    reconcile_telemetry(
+        station_id=payload["stationId"],
+        docks_snapshot=payload["docks"],
+    )
 
 
 _HANDLERS = {

@@ -72,10 +72,13 @@ class Command(BaseCommand):
 
     def _on_connect(self, client, userdata, flags, rc):
         if rc == 0:
-            # Subscribe to events from ALL stations
-            # In production, IoT Core rules subscribe to this same topic pattern
+            # Two subscriptions mirror the two IoT Rules used in production:
+            # Rule 1: station/+/events    → event ingestion Lambda
+            # Rule 2: station/+/telemetry → same Lambda (separate rule so each
+            #         can have independent retry/error policies in production)
             client.subscribe("station/+/events", qos=1)
-            logger.info("Subscribed to station/+/events")
+            client.subscribe("station/+/telemetry", qos=1)
+            logger.info("Subscribed to station/+/events and station/+/telemetry")
         else:
             logger.error(f"MQTT connection failed with code {rc}")
 

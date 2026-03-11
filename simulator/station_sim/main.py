@@ -47,6 +47,10 @@ FLEET_YML = Path(__file__).resolve().parents[1] / "fleet.yml"
 # Mimics the real-world gap between latch releasing and bike physically departing.
 UNDOCK_DELAY_SEC = 1.5
 
+# How often each station broadcasts its full dock state snapshot.
+# Backend uses this to catch missed events and correct DB drift.
+TELEMETRY_INTERVAL_SEC = 30
+
 
 def build_fleet(config: FleetConfig) -> dict[str, Station]:
     """Build a Station instance for each station in the fleet config."""
@@ -234,6 +238,43 @@ def _pick_destination(
     return random.choice(list(fleet.keys()))
 
 
+def _telemetry_loop(client: mqtt.Client, fleet: dict[str, Station]) -> None:
+    """
+    Background thread: publishes STATION_TELEMETRY for every station every
+    TELEMETRY_INTERVAL_SEC seconds.
+
+    Builds the snapshot from each Station's in-memory dock_state, which is
+    kept in sync as bikes dock and undock during the simulation.
+    """
+    while True:
+        time.sleep(TELEMETRY_INTERVAL_SEC)
+        for station_id, station in fleet.items():
+            payload = _build_telemetry_payload(station)
+            topic = f"station/{station_id}/telemetry"
+            client.publish(topic, json.dumps(payload), qos=1)
+            logger.debug(f"Telemetry published → {topic}")
+
+
+def _build_telemetry_payload(station: Station) -> dict:
+    """Build the STATION_TELEMETRY payload from the station's current dock state."""
+    docks = [
+        {
+            "dockId": dock_index,
+            "state": "OCCUPIED" if bike_id else "AVAILABLE",
+            "bikeId": bike_id,
+            "healthy": True,
+            "faultCode": None,
+        }
+        for dock_index, bike_id in sorted(station.dock_state.items())
+    ]
+    return {
+        "type": "STATION_TELEMETRY",
+        "stationId": station.station_id,
+        "ts": int(time.time()),
+        "docks": docks,
+    }
+
+
 def _publish_events(client, station_id: str, events: list[dict]):
     """
     Publish a list of events to station/{station_id}/events.
@@ -268,6 +309,14 @@ def run(host: str, port: int, fleet: dict[str, Station], user_map: dict[str, Use
 
     logger.info(f"Connecting to broker at {host}:{port}")
     client.connect(host, port, keepalive=60)
+
+    telemetry_thread = threading.Thread(
+        target=_telemetry_loop,
+        args=(client, fleet),
+        daemon=True,
+        name="telemetry",
+    )
+    telemetry_thread.start()
 
     try:
         client.loop_forever()
