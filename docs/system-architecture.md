@@ -5,53 +5,65 @@
 ```mermaid
 graph TD
 
-%% Mobile Clients
-AND[Android App] -->|HTTPS + JWT| R53[Route 53: api.bikeshare.com]
-IOS[iOS App] -->|HTTPS + JWT| R53
-USIM[User Simulator] -->|HTTPS + JWT| R53
+subgraph CLIENTS["Mobile Clients"]
+    AND[Android App]
+    IOS[iOS App]
+    USIM[User Simulator]
+end
 
-%% Edge
-R53 --> ALB[Application Load Balancer]
-ALB --> ECS[Django Backend API]
+subgraph EDGE["AWS Edge"]
+    R53["Route 53: api.bikeshare.com"]
+    ALB[Application Load Balancer]
+    ECS[Django Backend API]
+end
+
+subgraph STATION_LAYER["Station Layer"]
+    SSIM["Station Simulator (local dev)"]
+    STN["Real Stations — nRF9160 (later)"]
+end
+
+subgraph IOT_LAYER["AWS IoT Core"]
+    BROKER[Broker]
+    RULE1["IoT Rule 1: station/+/events"]
+    RULE2["IoT Rule 2: station/+/telemetry"]
+end
+
+subgraph LAMBDAS["AWS Lambda"]
+    LINGEST[Event Ingestion]
+    LSWEEP[Timeout Sweep]
+    LHBEAT[Station Heartbeat]
+end
+
+subgraph SCHEDULE["CloudWatch — Scheduled Rules"]
+    SWEEP[every 10s]
+    HBEAT[every 60s]
+end
+
+DB[("PostgreSQL")]
+
+%% HTTP — inbound + polling
+CLIENTS -->|"HTTPS + JWT"| R53
+R53 --> ALB --> ECS
+AND & IOS -->|"Poll /commands/{id}"| ECS
 
 %% Backend → DB and IoT
-ECS -->|1. Create Command PENDING| DB[(PostgreSQL)]
-ECS -->|2. Publish UNLOCK cmd| IOT[AWS IoT Core]
+ECS -->|"1. Create Command [PENDING]"| DB
+ECS -->|"2. Publish UNLOCK"| BROKER
 
-%% Device layer
-IOT -->|Deliver UNLOCK cmd| SSIM[Station Simulator]
-IOT -->|Deliver UNLOCK cmd| STN[Real Stations - nRF9160, later]
+%% IoT ↔ Stations
+BROKER -->|"UNLOCK cmd"| SSIM & STN
+SSIM & STN -->|"events + telemetry"| BROKER
 
-SSIM -->|UNLOCK_RESULT event| IOT
-SSIM -->|BIKE_DOCKED event| IOT
-SSIM -->|BIKE_UNDOCKED event| IOT
-SSIM -->|STATION_TELEMETRY every 30s| IOT
+%% IoT Rules → Lambda
+BROKER --> RULE1 & RULE2
+RULE1 & RULE2 --> LINGEST
 
-%% Event ingestion — two separate IoT Rules, same Lambda
-IOT --> RULE1[IoT Rule 1: station/+/events]
-IOT --> RULE2[IoT Rule 2: station/+/telemetry]
-RULE1 --> LAMBDA[Lambda: Event Ingestion]
-RULE2 --> LAMBDA
-LAMBDA -->|Update Command state| DB
-LAMBDA -->|Start / End Ride| DB
-LAMBDA -->|Update Dock + Bike state| DB
-LAMBDA -->|Reconcile dock drift| DB
-LAMBDA -->|Update Station.last_telemetry_at| DB
+%% Lambda → DB
+LINGEST -->|"Update Command / Ride / Dock / Bike / Station state"| DB
 
-%% Client polling
-AND -->|GET /commands/requestId| ECS
-IOS -->|GET /commands/requestId| ECS
-ECS -->|Read command + ride status| DB
-
-%% Scheduled jobs — CloudWatch + Lambda (prod) / management commands (local)
-SWEEP[CloudWatch: every 10s] --> LSWEEP[Lambda: Timeout Sweep]
-HBEAT[CloudWatch: every 60s] --> LHBEAT[Lambda: Station Heartbeat]
-LSWEEP -->|Mark expired PENDING → TIMEOUT| DB
-LHBEAT -->|Mark silent stations INACTIVE| DB
-
-%% Local dev alternative
-LMQTT[Mosquitto - local dev] -.->|replaces IoT Core| LSUB[Local Event Subscriber]
-LSUB -.->|subscribes to station/+/events and station/+/telemetry| ECS
+%% Scheduled jobs
+SWEEP --> LSWEEP -->|"PENDING → TIMEOUT"| DB
+HBEAT --> LHBEAT -->|"ACTIVE → INACTIVE"| DB
 ```
 
 ## Unlock + Ride Lifecycle (Sequence)
