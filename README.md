@@ -65,6 +65,42 @@ make stop
 
 ---
 
+## Routine testing workflow
+
+After running end-to-end tests, bikes move around the fleet and dock states change. Run `make seed` before each test session to reset everything back to the starting positions from `fleet.yml`.
+
+```bash
+make seed       # reset bikes to home positions (safe to run anytime, no duplicates)
+make dev        # start the stack (skip if already running)
+```
+
+Then in a second terminal, run the user simulator against the scenario you want to test:
+
+```bash
+cd simulator
+
+# Single scenario
+.venv/bin/python -m user_sim.main --user +15550000001   # normal success (S001 → S004)
+.venv/bin/python -m user_sim.main --user +15550000002   # flaky unlock (S002)
+.venv/bin/python -m user_sim.main --user +15550000003   # ghost — bike not returned
+.venv/bin/python -m user_sim.main --user +15550000004   # stale ride reconciliation (S005 silent_return)
+
+# All users concurrently
+.venv/bin/python -m user_sim.main
+```
+
+Watch Terminal 1 for the full station + backend event flow.
+
+**Full reset** (wipe DB and start clean):
+```bash
+make stop
+docker compose down -v   # removes volumes — DB is wiped
+make dev
+make seed
+```
+
+---
+
 ## Testing the unlock flow end to end
 
 You need two terminals. **Terminal 1** runs `make dev`. **Terminal 2** runs the curl commands below. After step 3, switch your eyes back to Terminal 1 to watch the ride play out automatically.
