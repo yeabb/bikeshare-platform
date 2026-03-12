@@ -5,7 +5,7 @@ Runs continuously, checking every SWEEP_INTERVAL_SEC seconds for PENDING
 commands that have passed their expires_at and marking them TIMEOUT.
 
 Local dev:  runs as a process managed by honcho (see Procfile)
-Production: replaced by an AWS Lambda function on a scheduled CloudWatch rule
+TODO: Production: replaced by an AWS Lambda function on a scheduled CloudWatch rule
             (e.g. rate(10 seconds)) — same sweep_timed_out_commands() function,
             just a different trigger.
 

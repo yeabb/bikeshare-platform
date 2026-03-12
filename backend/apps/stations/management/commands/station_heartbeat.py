@@ -5,7 +5,7 @@ Runs continuously, checking every HEARTBEAT_INTERVAL_SEC seconds for ACTIVE
 stations that have stopped sending telemetry and marking them INACTIVE.
 
 Local dev:  runs as the `heartbeat` process managed by honcho (see Procfile)
-Production: replaced by a CloudWatch Scheduled Rule triggering a Lambda every
+TODO: Production: replaced by a CloudWatch Scheduled Rule triggering a Lambda every
             60 seconds — same station_heartbeat_check() function, different trigger.
 
 Usage:

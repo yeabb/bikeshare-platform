@@ -25,26 +25,31 @@ IOT -->|Deliver UNLOCK cmd| STN[Real Stations - nRF9160, later]
 SSIM -->|UNLOCK_RESULT event| IOT
 SSIM -->|BIKE_DOCKED event| IOT
 SSIM -->|BIKE_UNDOCKED event| IOT
-SSIM -->|Telemetry| IOT
+SSIM -->|STATION_TELEMETRY every 30s| IOT
 
-%% Event ingestion
-IOT --> RULE[IoT Rule]
-RULE --> LAMBDA[Lambda: Event Ingestion]
+%% Event ingestion — two separate IoT Rules, same Lambda
+IOT --> RULE1[IoT Rule 1: station/+/events]
+IOT --> RULE2[IoT Rule 2: station/+/telemetry]
+RULE1 --> LAMBDA[Lambda: Event Ingestion]
+RULE2 --> LAMBDA
 LAMBDA -->|Update Command state| DB
 LAMBDA -->|Start / End Ride| DB
 LAMBDA -->|Update Dock + Bike state| DB
+LAMBDA -->|Reconcile dock drift| DB
+LAMBDA -->|Update Station.last_telemetry_at| DB
 
 %% Client polling
 AND -->|GET /commands/requestId| ECS
 IOS -->|GET /commands/requestId| ECS
 ECS -->|Read command + ride status| DB
 
-%% Timeout job
-TIMEOUT[Scheduled Job / Celery Beat] -->|Mark expired PENDING → TIMEOUT| DB
+%% Scheduled jobs — CloudWatch + Lambda (prod) / management commands (local)
+SWEEP[CloudWatch: every 10s] -->|Mark expired PENDING → TIMEOUT| DB
+HBEAT[CloudWatch: every 60s] -->|Mark silent stations INACTIVE| DB
 
 %% Local dev alternative
 LMQTT[Mosquitto - local dev] -.->|replaces IoT Core| LSUB[Local Event Subscriber]
-LSUB -.->|calls event_handler directly| ECS
+LSUB -.->|subscribes to station/+/events and station/+/telemetry| ECS
 ```
 
 ## Unlock + Ride Lifecycle (Sequence)
@@ -140,6 +145,7 @@ flowchart TD
         HUR2["_handle_unlock_result()\nevent_handler.py\n\n• Extract requestId, status, reason\n• Call commands service"]
         HBD["_handle_bike_docked()\nevent_handler.py\n\n• Extract bikeId, stationId, dockId\n• Call rides service"]
         HBUD["_handle_bike_undocked()\nevent_handler.py\n\n• Extract stationId, dockId\n• Call stations service"]
+        HTM["_handle_telemetry()\nevent_handler.py\n\n• Extract stationId, docks snapshot\n• Call stations service"]
     end
 
     subgraph RIDES ["rides app"]
@@ -149,6 +155,7 @@ flowchart TD
 
     subgraph STATIONS ["stations app"]
         HBU["handle_bike_undocked()\nservices.py\n\n• Dock → AVAILABLE\n• Clear Dock.current_bike"]
+        RT["reconcile_telemetry()\nservices.py\n\n• Update last_telemetry_at\n• Restore INACTIVE → ACTIVE\n• Sync each dock to physical state"]
     end
 
     subgraph ENTRY ["Entry Points (environment-dependent)"]
@@ -164,21 +171,27 @@ flowchart TD
     CS -->|"write"| DB
     PUB -->|"MQTT: station/id/cmd"| MQTT[["MQTT Broker\nMosquitto / IoT Core"]]
 
-    %% Event ingestion path
+    %% Event ingestion path — events topic
     MQTT -->|"station/id/events"| LOCAL
     MQTT -->|"station/id/events"| LAMBDA
     LOCAL -->|"station_id + payload"| EH
     LAMBDA -->|"station_id + payload"| EH
 
+    %% Telemetry ingestion path — telemetry topic
+    MQTT -->|"station/id/telemetry"| LOCAL
+    MQTT -->|"station/id/telemetry"| LAMBDA
+
     %% Event routing
     EH --> HUR2
     EH --> HBD
     EH --> HBUD
+    EH --> HTM
 
     %% Handler → service calls
     HUR2 -->|"request_id, status, reason"| HUR
     HBD -->|"bike_id, station_id, dock_index"| ER
     HBUD -->|"station_id, dock_index"| HBU
+    HTM -->|"station_id, docks_snapshot"| RT
 
     %% Service → service calls
     HUR -->|"On SUCCESS"| SR
@@ -188,6 +201,7 @@ flowchart TD
     HUR -->|"write"| DB
     ER -->|"write"| DB
     HBU -->|"write"| DB
+    RT -->|"write"| DB
 ```
 
 ### What each layer is responsible for
@@ -199,7 +213,7 @@ flowchart TD
 | IoT publisher | `iot/publisher.py` | MQTT protocol | Business rules |
 | Event handler | `iot/event_handler.py` | MQTT payload fields | Business rules, DB |
 | Ride service | `rides/services.py` | Ride/Bike/Dock state | MQTT, HTTP |
-| Station service | `stations/services.py` | Dock state | MQTT, HTTP, Rides |
+| Station service | `stations/services.py` | Dock/Station state, telemetry reconciliation | MQTT, HTTP, Rides |
 
 ## Bike → Dock Mapping (Critical)
 
@@ -223,8 +237,10 @@ In local development AWS IoT Core and Lambda are replaced by two local processes
 | Production | Local equivalent |
 |------------|-----------------|
 | AWS IoT Core | Mosquitto (Docker) |
-| Lambda ingestion function | `python manage.py mqtt_listener` — subscribes to `station/+/events`, calls `event_handler` directly |
-| Real station hardware | `python -m station_sim.main` — simulates a fleet of stations, subscribes to `station/+/cmd`, publishes events back |
+| Lambda ingestion function | `python manage.py mqtt_listener` — subscribes to `station/+/events` and `station/+/telemetry`, calls `event_handler` directly |
+| CloudWatch every 10s → Lambda timeout sweep | `python manage.py sweep_timeouts` — marks stale PENDING commands TIMEOUT every 5s |
+| CloudWatch every 60s → Lambda heartbeat | `python manage.py station_heartbeat` — marks silent stations INACTIVE every 60s |
+| Real station hardware | `python -m station_sim.main` — simulates a fleet of stations, subscribes to `station/+/cmd`, publishes events + telemetry every 30s |
 
 The backend publishes to Mosquitto via paho-mqtt (`MQTT_BROKER_TYPE=local`). Everything else — models, services, event_handler — is identical between local and production.
 
