@@ -44,8 +44,10 @@ IOS -->|GET /commands/requestId| ECS
 ECS -->|Read command + ride status| DB
 
 %% Scheduled jobs — CloudWatch + Lambda (prod) / management commands (local)
-SWEEP[CloudWatch: every 10s] -->|Mark expired PENDING → TIMEOUT| DB
-HBEAT[CloudWatch: every 60s] -->|Mark silent stations INACTIVE| DB
+SWEEP[CloudWatch: every 10s] --> LSWEEP[Lambda: Timeout Sweep]
+HBEAT[CloudWatch: every 60s] --> LHBEAT[Lambda: Station Heartbeat]
+LSWEEP -->|Mark expired PENDING → TIMEOUT| DB
+LHBEAT -->|Mark silent stations INACTIVE| DB
 
 %% Local dev alternative
 LMQTT[Mosquitto - local dev] -.->|replaces IoT Core| LSUB[Local Event Subscriber]
