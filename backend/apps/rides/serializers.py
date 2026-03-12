@@ -5,10 +5,10 @@ from apps.rides.models import Ride
 
 class RideSerializer(serializers.ModelSerializer):
     ride_id = serializers.UUIDField()
-    bike_id = serializers.CharField(source="bike_id")
-    start_station_id = serializers.CharField(source="start_station_id")
+    bike_id = serializers.CharField()
+    start_station_id = serializers.CharField()
     start_dock_index = serializers.IntegerField(source="start_dock.dock_index")
-    end_station_id = serializers.CharField(source="end_station_id", allow_null=True)
+    end_station_id = serializers.CharField(allow_null=True)
     end_dock_index = serializers.SerializerMethodField()
     duration_sec = serializers.SerializerMethodField()
 
