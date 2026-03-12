@@ -161,13 +161,15 @@ Seeded from `simulator/fleet.yml`:
 | `+15550000001` | `commuter` | Always rides to S004, always returns the bike |
 | `+15550000002` | `explorer` | Random destination, 15% chance of not returning |
 | `+15550000003` | `ghost` | Random destination, 80% chance of never returning |
+| `+15550000004` | `commuter` | Always rides to S005 — stale ride reconciliation demo |
 
 | Station | Bikes | Unlock behavior |
 |---------|-------|----------|
-| `S001` — Market & 5th | B001, B002, B003 | `always_success` |
+| `S001` — Market & 5th | B001, B002, B003, B008 | `always_success` |
 | `S002` — Mission & 16th | B004, B005 | `flaky` (30% fail rate) |
 | `S003` — Castro & Market | B006 | `always_fail` |
 | `S004` — Caltrain Station | B007 | `timeout` (never responds) |
+| `S005` — Embarcadero | — | `silent_return` (unlocks succeed, BIKE_DOCKED suppressed) |
 
 ---
 

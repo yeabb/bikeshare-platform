@@ -1,3 +1,6 @@
+from datetime import datetime
+from datetime import timezone as dt_timezone
+
 from django.test import TestCase
 from django.utils import timezone
 
@@ -346,3 +349,106 @@ class InactiveStationsEndpointTests(TestCase):
     def test_requires_authentication(self):
         resp = self.client.get("/api/v1/stations/inactive")
         self.assertEqual(resp.status_code, 401)
+
+
+def make_active_ride(bike, station, dock, user):
+    """Create a Command + ACTIVE Ride for the given bike. Returns the Ride."""
+    from apps.rides.services import start_ride
+
+    command = Command.objects.create(
+        user=user,
+        station=station,
+        dock=dock,
+        bike=bike,
+        status=CommandStatus.SUCCESS,
+        expires_at=timezone.now() + timezone.timedelta(seconds=10),
+        resolved_at=timezone.now(),
+    )
+    return start_ride(command)
+
+
+class StaleRideReconciliationTests(TestCase):
+    """
+    Two-snapshot stale ride reconciliation.
+
+    When a BIKE_DOCKED event is missed, periodic telemetry is used to
+    detect and end stale rides. Two consecutive OCCUPIED snapshots are
+    required before ending the ride to avoid false positives.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(phone="+15550000099")
+        self.station = make_station()
+        # Dock starts AVAILABLE — bike has undocked but BIKE_DOCKED was missed
+        self.dock = make_dock(self.station, state=DockState.AVAILABLE)
+        self.bike = make_bike(bike_id="B001", station=self.station)
+        self.ride = make_active_ride(self.bike, self.station, self.dock, self.user)
+        # first_ts simulates when the bike actually returned (60s ago)
+        self.first_ts = int((timezone.now() - timezone.timedelta(seconds=60)).timestamp())
+        self.second_ts = int(timezone.now().timestamp())
+
+    def test_first_snapshot_sets_suspected_return_at(self):
+        """AVAILABLE→OCCUPIED with active ride sets suspected_return_at, ride stays ACTIVE."""
+        reconcile_telemetry("S001", [snap(1, "OCCUPIED", "B001")], telemetry_ts=self.first_ts)
+
+        self.ride.refresh_from_db()
+        self.assertEqual(self.ride.status, RideStatus.ACTIVE)
+        self.assertIsNotNone(self.ride.suspected_return_at)
+
+    def test_first_snapshot_suspected_return_at_matches_telemetry_ts(self):
+        """suspected_return_at is set to the telemetry timestamp, not now()."""
+        expected = datetime.fromtimestamp(self.first_ts, tz=dt_timezone.utc)
+
+        reconcile_telemetry("S001", [snap(1, "OCCUPIED", "B001")], telemetry_ts=self.first_ts)
+
+        self.ride.refresh_from_db()
+        self.assertEqual(self.ride.suspected_return_at, expected)
+
+    def test_second_snapshot_ends_stale_ride(self):
+        """Two consecutive OCCUPIED snapshots complete the ride."""
+        reconcile_telemetry("S001", [snap(1, "OCCUPIED", "B001")], telemetry_ts=self.first_ts)
+        reconcile_telemetry("S001", [snap(1, "OCCUPIED", "B001")], telemetry_ts=self.second_ts)
+
+        self.ride.refresh_from_db()
+        self.assertEqual(self.ride.status, RideStatus.COMPLETED)
+
+    def test_stale_ride_ended_at_uses_first_snapshot_time(self):
+        """ended_at is the first snapshot timestamp, not second — billing reflects actual return time."""
+        expected_ended_at = datetime.fromtimestamp(self.first_ts, tz=dt_timezone.utc)
+
+        reconcile_telemetry("S001", [snap(1, "OCCUPIED", "B001")], telemetry_ts=self.first_ts)
+        reconcile_telemetry("S001", [snap(1, "OCCUPIED", "B001")], telemetry_ts=self.second_ts)
+
+        self.ride.refresh_from_db()
+        self.assertEqual(self.ride.ended_at, expected_ended_at)
+
+    def test_second_snapshot_clears_suspected_return_at(self):
+        """suspected_return_at is cleared when the ride is ended."""
+        reconcile_telemetry("S001", [snap(1, "OCCUPIED", "B001")], telemetry_ts=self.first_ts)
+        reconcile_telemetry("S001", [snap(1, "OCCUPIED", "B001")], telemetry_ts=self.second_ts)
+
+        self.ride.refresh_from_db()
+        self.assertIsNone(self.ride.suspected_return_at)
+
+    def test_bike_leaves_before_second_snapshot_clears_suspected_return_at(self):
+        """Bike departing before second snapshot clears suspected_return_at — ride stays ACTIVE."""
+        reconcile_telemetry("S001", [snap(1, "OCCUPIED", "B001")], telemetry_ts=self.first_ts)
+        self.ride.refresh_from_db()
+        self.assertIsNotNone(self.ride.suspected_return_at)
+
+        # Dock is now OCCUPIED in DB. Next snapshot shows AVAILABLE — bike left again.
+        reconcile_telemetry("S001", [snap(1, "AVAILABLE")], telemetry_ts=self.second_ts)
+
+        self.ride.refresh_from_db()
+        self.assertEqual(self.ride.status, RideStatus.ACTIVE)
+        self.assertIsNone(self.ride.suspected_return_at)
+
+    def test_no_active_ride_does_not_set_suspected_return_at(self):
+        """If the bike has no active ride, suspected_return_at is never set."""
+        self.ride.status = RideStatus.COMPLETED
+        self.ride.save()
+
+        reconcile_telemetry("S001", [snap(1, "OCCUPIED", "B001")], telemetry_ts=self.first_ts)
+
+        self.ride.refresh_from_db()
+        self.assertIsNone(self.ride.suspected_return_at)

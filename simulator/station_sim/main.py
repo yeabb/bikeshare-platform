@@ -201,13 +201,23 @@ def _simulate_ride(
         )
         return
 
-    # 5. Dock the bike and publish BIKE_DOCKED
+    # 5. Dock the bike — always update simulator state so telemetry is accurate.
+    #    For silent_return stations: suppress BIKE_DOCKED to simulate arrival
+    #    sensor / connectivity failure. Stale ride reconciliation will detect
+    #    and close the ride via two consecutive telemetry snapshots (~60s).
     events = destination.handle_bike_docked(dock_index, bike_id)
-    _publish_events(client, destination_id, events)
-    logger.info(
-        f"[Ride] {user.phone} ({user.behavior}) — bike {bike_id} returned to "
-        f"{destination_id} dock {dock_index}"
-    )
+    if destination.config.behavior == "silent_return":
+        logger.warning(
+            f"[Ride] [{destination_id}] silent_return — bike {bike_id} physically docked "
+            f"at dock {dock_index}, BIKE_DOCKED suppressed. "
+            "Stale ride reconciliation will close this ride via telemetry."
+        )
+    else:
+        _publish_events(client, destination_id, events)
+        logger.info(
+            f"[Ride] {user.phone} ({user.behavior}) — bike {bike_id} returned to "
+            f"{destination_id} dock {dock_index}"
+        )
 
 
 def _pick_destination(

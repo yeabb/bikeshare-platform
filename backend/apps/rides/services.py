@@ -39,7 +39,8 @@ def start_ride(command) -> Ride:
 
 
 def end_ride_on_dock(
-    bike_id: str, end_station_id: str, end_dock_index: int, event_ts: int
+    bike_id: str, end_station_id: str, end_dock_index: int, event_ts: int,
+    ended_at=None,
 ) -> None:
     """
     End the active ride for a bike when it physically docks.
@@ -49,7 +50,10 @@ def end_ride_on_dock(
         bike_id: e.g. "B742"
         end_station_id: e.g. "S001"
         end_dock_index: integer dock index from MQTT event (dockId field)
-        event_ts: unix timestamp from the BIKE_DOCKED event (for logging)
+        event_ts: unix timestamp from the triggering event (for logging)
+        ended_at: explicit end time to use instead of now(). Passed by telemetry
+                  reconciliation so billing reflects the first snapshot timestamp,
+                  not the time of second-snapshot confirmation.
     """
     from apps.bikes.models import Bike
     from apps.stations.models import Dock
@@ -77,15 +81,16 @@ def end_ride_on_dock(
         end_dock = None
         end_station = None
 
-    now = timezone.now()
+    resolved_ended_at = ended_at or timezone.now()
 
     with transaction.atomic():
         ride = bike.current_ride
         ride.status = RideStatus.COMPLETED
-        ride.ended_at = now
+        ride.ended_at = resolved_ended_at
+        ride.suspected_return_at = None
         ride.end_station = end_station
         ride.end_dock = end_dock
-        ride.save(update_fields=["status", "ended_at", "end_station", "end_dock", "updated_at"])
+        ride.save(update_fields=["status", "ended_at", "suspected_return_at", "end_station", "end_dock", "updated_at"])
 
         bike.status = BikeStatus.AVAILABLE
         bike.current_ride = None
@@ -102,7 +107,7 @@ def end_ride_on_dock(
             end_dock.current_bike = bike
             end_dock.save(update_fields=["state", "current_bike", "updated_at"])
 
-    duration = int((now - ride.started_at).total_seconds())
+    duration = int((resolved_ended_at - ride.started_at).total_seconds())
     logger.info(
         f"Ride {ride.ride_id} COMPLETED — bike={bike_id} "
         f"end={end_station_id}-{end_dock_index} duration={duration}s"

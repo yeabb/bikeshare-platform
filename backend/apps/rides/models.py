@@ -43,6 +43,9 @@ class Ride(TimeStampedModel):
     )
     started_at = models.DateTimeField()
     ended_at = models.DateTimeField(null=True, blank=True)
+    # Set on first telemetry snapshot that sees this bike docked with no BIKE_DOCKED event received.
+    # Cleared when ride is ended (normally or via reconciliation). See stations/services.py.
+    suspected_return_at = models.DateTimeField(null=True, blank=True)
     status = models.CharField(
         max_length=20, choices=RideStatus.choices, default=RideStatus.ACTIVE
     )

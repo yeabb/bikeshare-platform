@@ -16,6 +16,10 @@ Behavior modes:
   flaky           - succeeds (1 - fail_rate)% of the time, fails otherwise
   slow            - succeeds but waits delay_sec before responding
   timeout         - never publishes UNLOCK_RESULT (simulates offline station)
+  silent_return   - unlocks succeed normally; BIKE_DOCKED is suppressed when bikes
+                    return (handled in main.py _simulate_ride). Simulates arrival
+                    sensor / connectivity failure at return time. Used to test stale
+                    ride reconciliation via telemetry.
 """
 import logging
 import random

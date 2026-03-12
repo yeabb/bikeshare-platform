@@ -96,6 +96,7 @@ def _handle_telemetry(payload: dict) -> None:
     reconcile_telemetry(
         station_id=payload["stationId"],
         docks_snapshot=payload["docks"],
+        telemetry_ts=payload["ts"],
     )
 
 

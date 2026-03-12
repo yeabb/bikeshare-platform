@@ -10,6 +10,9 @@
 #   flaky           - succeeds most of the time, fails randomly (set fail_rate)
 #   slow            - succeeds but takes longer than normal (use delay_sec)
 #   timeout         - never responds (simulates station going offline)
+#   silent_return   - unlocks succeed normally but BIKE_DOCKED is suppressed on return
+#                     (simulates arrival sensor / connectivity failure at return time)
+#                     Stale ride reconciliation detects and closes the ride via telemetry.
 #
 # User behavior modes:
 #   commuter    - always rides the same route (origin → commuter_destination)
@@ -32,7 +35,7 @@ stations:
       - index: 3
         bike_id: "B003"
       - index: 4
-        bike_id: null       # empty dock
+        bike_id: "B008"     # default bike for user +15550000004 (silent_return demo)
 
   - id: "S002"
     name: "Mission & 16th"
@@ -82,6 +85,21 @@ stations:
       - index: 4
         bike_id: null
 
+  - id: "S005"
+    name: "Embarcadero"
+    lat: 37.7955
+    lng: -122.3937
+    behavior: silent_return   # unlocks succeed but BIKE_DOCKED is suppressed on return
+    docks:                    # used to test stale ride reconciliation via telemetry
+      - index: 1
+        bike_id: null
+      - index: 2
+        bike_id: null
+      - index: 3
+        bike_id: null
+      - index: 4
+        bike_id: null
+
 users:
   # Commuter: same route every day, S001 → S004, always returns the bike
   - phone: "+15550000001"
@@ -104,3 +122,12 @@ users:
     bike_id: "B002"                 # default bike for user simulator
     ride_duration_range: [20, 40]
     no_return_rate: 0.8
+
+  # Silent return demo: always returns to S005 (silent_return station).
+  # BIKE_DOCKED is suppressed — stale ride reconciliation closes the ride via telemetry.
+  - phone: "+15550000004"
+    behavior: commuter
+    bike_id: "B008"
+    commuter_destination: "S005"
+    ride_duration_range: [15, 30]
+    no_return_rate: 0.0

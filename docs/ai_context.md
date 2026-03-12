@@ -224,7 +224,7 @@ Celery is worth adding when you need retry logic and queuing for async tasks lik
 ## What Is Not Built Yet
 
 - SMS OTP (stubbed — returns OTP in response when DEBUG=True)
-- Stale ride reconciliation (rides stuck ACTIVE when BIKE_DOCKED event missed — needs two-snapshot telemetry confirmation)
+- Stale rides stuck ACTIVE for an unusually long time (two-snapshot catches most cases; rides that slip through need a manual ops endpoint — task #12)
 - AWS Lambda ingestion function (mqtt_listener management command is the local analog)
 - AWS Lambda timeout sweep + heartbeat (sweep_timeouts and station_heartbeat management commands are the local analogs)
 - AWS IoT Core setup (Things, certificates, policies, IoT Rules)

@@ -263,7 +263,7 @@ This is a safety-net reconciliation snapshot. The backend uses it to catch misse
 - Update `Station.last_telemetry_at` — used by station heartbeat monitoring to detect downed stations
 - If station was `INACTIVE` (flagged as down), restore it to `ACTIVE`
 - Reconcile each dock in the snapshot against DB state — on discrepancy, update DB to match physical reality (telemetry wins)
-- Do not end rides from telemetry — only explicit `BIKE_DOCKED` events do that (stale ride reconciliation via two-snapshot confirmation is a planned enhancement)
+- Two-snapshot stale ride reconciliation: if telemetry shows a dock `OCCUPIED` with a bike on an active ride and no `BIKE_DOCKED` was received, the first snapshot sets `ride.suspected_return_at`; a second consecutive `OCCUPIED` snapshot ends the ride using `suspected_return_at` as `ended_at` for billing accuracy
 
 ---
 
