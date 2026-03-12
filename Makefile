@@ -1,6 +1,6 @@
 .PHONY: dev setup infra stop test migrate migrations seed shell
 
-PYTHON     = backend/.venv/bin/python3
+PYTHON     = .venv/bin/python3
 MANAGE     = cd backend && DJANGO_SETTINGS_MODULE=bikeshare.settings.local $(PYTHON) manage.py
 SIM_PYTHON = simulator/.venv/bin/python3
 
