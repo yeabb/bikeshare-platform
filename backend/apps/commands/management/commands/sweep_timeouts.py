@@ -5,9 +5,10 @@ Runs continuously, checking every SWEEP_INTERVAL_SEC seconds for PENDING
 commands that have passed their expires_at and marking them TIMEOUT.
 
 Local dev:  runs as a process managed by honcho (see Procfile)
-Production: replaced by infra/aws/lambdas/timeout_sweep/ triggered by a CloudWatch
-            Scheduled Rule (rate(10 seconds)) — same sweep_timed_out_commands() function,
-            different trigger.
+Production: replaced by infra/aws/lambdas/timeout_sweep/ triggered by an EventBridge
+            Scheduler schedule (rate(10 seconds)) — same sweep_timed_out_commands() function,
+            different trigger. EventBridge Scheduler is used over CloudWatch Scheduled Rules
+            because CloudWatch Rules have a minimum granularity of 1 minute.
 
 Usage:
     python manage.py sweep_timeouts

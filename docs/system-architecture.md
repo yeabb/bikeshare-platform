@@ -34,7 +34,7 @@ subgraph LAMBDAS["AWS Lambda"]
     LHBEAT[Station Heartbeat]
 end
 
-subgraph SCHEDULE["CloudWatch — Scheduled Rules"]
+subgraph SCHEDULE["EventBridge Scheduler"]
     SWEEP[every 10s]
     HBEAT[every 60s]
 end
@@ -260,8 +260,8 @@ In local development AWS IoT Core and Lambda are replaced by two local processes
 |------------|-----------------|
 | AWS IoT Core | Mosquitto (Docker) |
 | Lambda ingestion function | `python manage.py mqtt_listener` — subscribes to `station/+/events` and `station/+/telemetry`, calls `event_handler` directly |
-| CloudWatch every 10s → Lambda timeout sweep | `python manage.py sweep_timeouts` — marks stale PENDING commands TIMEOUT every 5s |
-| CloudWatch every 60s → Lambda heartbeat | `python manage.py station_heartbeat` — marks silent stations INACTIVE every 60s |
+| EventBridge Scheduler (every 10s) → Lambda timeout sweep | `python manage.py sweep_timeouts` — marks stale PENDING commands TIMEOUT every 5s |
+| EventBridge Scheduler (every 60s) → Lambda heartbeat | `python manage.py station_heartbeat` — marks silent stations INACTIVE every 60s |
 | Real station hardware | `python -m station_sim.main` — simulates a fleet of stations, subscribes to `station/+/cmd`, publishes events + telemetry every 30s |
 
 The backend publishes to Mosquitto via paho-mqtt (`MQTT_BROKER_TYPE=local`). Everything else — models, services, event_handler — is identical between local and production.

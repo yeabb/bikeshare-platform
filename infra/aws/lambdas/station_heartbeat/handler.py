@@ -1,7 +1,12 @@
 """
 Lambda: Station Heartbeat
 
-Triggered by a CloudWatch Scheduled Rule every 60 seconds.
+Triggered by an EventBridge Scheduler schedule every 60 seconds.
+
+EventBridge Scheduler is the preferred AWS scheduling service over CloudWatch
+Scheduled Rules. It is purpose-built for scheduling, supports sub-minute rates
+(used by the timeout sweep Lambda), and directly invokes Lambda without an
+intermediary event bus rule.
 
 Calls the Django internal heartbeat endpoint, which finds all ACTIVE stations
 that have not sent telemetry within the inactivity threshold and marks them
@@ -10,7 +15,7 @@ GET /api/v1/stations/inactive/.
 
              Local                             Production
              -----                             ----------
-honcho        → station_heartbeat (management  CloudWatch (every 60s)
+honcho        → station_heartbeat (management  EventBridge Scheduler (every 60s)
   heartbeat     command) → station_heartbeat_      → Lambda (this)
                 check()                                   → POST /internal/stations/heartbeat/
                                                               → station_heartbeat_check()

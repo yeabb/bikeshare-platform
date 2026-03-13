@@ -1,7 +1,11 @@
 """
 Lambda: Timeout Sweep
 
-Triggered by a CloudWatch Scheduled Rule every 10 seconds.
+Triggered by an EventBridge Scheduler schedule every 10 seconds.
+
+EventBridge Scheduler is used instead of CloudWatch Scheduled Rules because
+CloudWatch Rules have a minimum granularity of 1 minute — they cannot fire
+every 10 seconds. EventBridge Scheduler supports sub-minute rates natively.
 
 Calls the Django internal sweep endpoint, which finds all PENDING commands
 that have passed their expires_at and marks them TIMEOUT. The dock is
@@ -9,7 +13,7 @@ restored to OCCUPIED so another user can unlock it.
 
              Local                             Production
              -----                             ----------
-honcho sweep → sweep_timeouts (management     CloudWatch (every 10s)
+honcho sweep → sweep_timeouts (management     EventBridge Scheduler (every 10s)
                command) → sweep_timed_out_        → Lambda (this)
                commands()                             → POST /internal/commands/sweep/
                                                           → sweep_timed_out_commands()
