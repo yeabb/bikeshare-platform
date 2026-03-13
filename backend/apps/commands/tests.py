@@ -147,3 +147,63 @@ class HandleUnlockResultTests(TestCase):
     def test_unknown_request_id_is_ignored(self):
         # Should not raise
         handle_unlock_result("00000000-0000-0000-0000-000000000000", "SUCCESS")
+
+
+VALID_SECRET = "test-secret-abc123"
+SWEEP_ENDPOINT = "/internal/commands/sweep/"
+
+
+class InternalSweepAuthTests(TestCase):
+    """Endpoint rejects requests without a valid secret."""
+
+    def test_missing_secret_returns_401(self):
+        resp = self.client.post(SWEEP_ENDPOINT)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_wrong_secret_returns_401(self):
+        resp = self.client.post(
+            SWEEP_ENDPOINT,
+            headers={"X-Internal-Secret": "wrong"},
+        )
+        self.assertEqual(resp.status_code, 401)
+
+    def test_get_method_not_allowed(self):
+        resp = self.client.get(SWEEP_ENDPOINT)
+        self.assertEqual(resp.status_code, 405)
+
+
+class InternalSweepTests(TestCase):
+    """Endpoint runs the sweep and returns the count."""
+
+    def _post(self):
+        from django.test import override_settings
+        with override_settings(INTERNAL_API_SECRET=VALID_SECRET):
+            return self.client.post(
+                SWEEP_ENDPOINT,
+                headers={"X-Internal-Secret": VALID_SECRET},
+            )
+
+    def test_returns_zero_when_nothing_to_sweep(self):
+        resp = self._post()
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {"swept": 0})
+
+    def test_sweeps_expired_pending_command(self):
+        user = make_user()
+        station = make_station()
+        dock = make_dock(station)
+        bike = make_bike(station=station, dock=dock)
+
+        # Create a PENDING command already past expires_at
+        Command.objects.create(
+            user=user,
+            station=station,
+            dock=dock,
+            bike=bike,
+            status=CommandStatus.PENDING,
+            expires_at=timezone.now() - timezone.timedelta(seconds=1),
+        )
+
+        resp = self._post()
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {"swept": 1})

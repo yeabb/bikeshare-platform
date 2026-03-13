@@ -1,10 +1,14 @@
+from django.conf import settings
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.commands.models import Command
 from apps.commands.serializers import CommandSerializer
-from apps.commands.services import create_unlock_command
+from apps.commands.services import create_unlock_command, sweep_timed_out_commands
 
 
 class UnlockCommandView(APIView):
@@ -36,3 +40,23 @@ class CommandDetailView(APIView):
             return Response({"error": "NOT_FOUND"}, status=404)
 
         return Response(CommandSerializer(command).data)
+
+
+@csrf_exempt
+@require_POST
+def internal_sweep(request):
+    """
+    Internal endpoint called by the Lambda timeout sweep function.
+
+    Runs one sweep pass: marks all PENDING commands past expires_at as TIMEOUT
+    and restores their docks to OCCUPIED.
+
+    Called by: infra/aws/lambdas/timeout_sweep/handler.py
+    Protected by: X-Internal-Secret header
+    """
+    secret = request.headers.get("X-Internal-Secret", "")
+    if not secret or secret != settings.INTERNAL_API_SECRET:
+        return JsonResponse({"error": "Unauthorized"}, status=401)
+
+    swept = sweep_timed_out_commands()
+    return JsonResponse({"swept": swept})

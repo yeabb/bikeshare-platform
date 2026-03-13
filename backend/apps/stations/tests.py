@@ -452,3 +452,57 @@ class StaleRideReconciliationTests(TestCase):
 
         self.ride.refresh_from_db()
         self.assertIsNone(self.ride.suspected_return_at)
+
+
+INTERNAL_SECRET = "test-heartbeat-secret"
+HEARTBEAT_ENDPOINT = "/internal/stations/heartbeat/"
+
+
+class InternalHeartbeatAuthTests(TestCase):
+    """Endpoint rejects requests without a valid secret."""
+
+    def test_missing_secret_returns_401(self):
+        resp = self.client.post(HEARTBEAT_ENDPOINT)
+        self.assertEqual(resp.status_code, 401)
+
+    def test_wrong_secret_returns_401(self):
+        resp = self.client.post(
+            HEARTBEAT_ENDPOINT,
+            headers={"X-Internal-Secret": "wrong"},
+        )
+        self.assertEqual(resp.status_code, 401)
+
+    def test_get_method_not_allowed(self):
+        resp = self.client.get(HEARTBEAT_ENDPOINT)
+        self.assertEqual(resp.status_code, 405)
+
+
+class InternalHeartbeatTests(TestCase):
+    """Endpoint runs the heartbeat check and returns the count."""
+
+    def _post(self):
+        from django.test import override_settings
+        with override_settings(INTERNAL_API_SECRET=INTERNAL_SECRET):
+            return self.client.post(
+                HEARTBEAT_ENDPOINT,
+                headers={"X-Internal-Secret": INTERNAL_SECRET},
+            )
+
+    def test_returns_zero_when_all_stations_healthy(self):
+        make_station()
+        resp = self._post()
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {"marked_inactive": 0})
+
+    def test_marks_silent_station_inactive(self):
+        station = make_station()
+        # Station has not sent telemetry — last_telemetry_at is old enough to trip the threshold
+        station.last_telemetry_at = timezone.now() - timezone.timedelta(seconds=200)
+        station.save()
+
+        resp = self._post()
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["marked_inactive"], 1)
+
+        station.refresh_from_db()
+        self.assertEqual(station.status, StationStatus.INACTIVE)

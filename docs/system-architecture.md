@@ -233,7 +233,9 @@ flowchart TD
 | Event handler | `iot/event_handler.py` | MQTT payload fields | Business rules, DB |
 | Ride service | `rides/services.py` | Ride/Bike/Dock state | MQTT, HTTP |
 | Station service | `stations/services.py` | Dock/Station state, telemetry reconciliation | MQTT, HTTP, Rides |
-| Lambda | `lambda/event_ingestion/handler.py` | IoT Core event shape, Django internal URL | Business rules, DB |
+| Lambda — event ingestion | `infra/aws/lambdas/event_ingestion/handler.py` | IoT Core event shape, Django internal URL | Business rules, DB |
+| Lambda — timeout sweep | `infra/aws/lambdas/timeout_sweep/handler.py` | CloudWatch schedule, Django internal URL | Business rules, DB |
+| Lambda — station heartbeat | `infra/aws/lambdas/station_heartbeat/handler.py` | CloudWatch schedule, Django internal URL | Business rules, DB |
 
 ## Bike → Dock Mapping (Critical)
 
