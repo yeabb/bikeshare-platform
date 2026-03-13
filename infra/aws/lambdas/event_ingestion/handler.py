@@ -12,13 +12,17 @@ The Lambda forwards the event to the Django internal endpoint, which
 calls handle_station_event() — the same function the local mqtt_listener
 calls in dev.
 
-                Local                              Production
-                -----                              ----------
+                Local                             
+                -----                                 
   Mosquitto → mqtt_listener → handle_station_event()
-                                                   IoT Core → Lambda (this)
-                                                       → POST /internal/station-event/
-                                                       → handle_station_event()
-
+                                                   
+                                                       
+                                                       
+             Production
+             ----------
+IoT Core → Lambda (this) → POST /internal/station-event/ → handle_station_event()
+                                                       
+                                                       
 Environment variables required:
   DJANGO_INTERNAL_URL   Full URL to the internal endpoint, e.g.
                         http://internal-alb.bikeshare.internal/internal/station-event/
