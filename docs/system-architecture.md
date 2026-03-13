@@ -174,7 +174,10 @@ flowchart TD
 
     subgraph ENTRY ["Entry Points (environment-dependent)"]
         LOCAL["mqtt_listener\nmanagement command\nlocal dev only"]
-        LAMBDA["AWS Lambda\nEvent Ingestion\nproduction only"]
+        subgraph LAMBDA_PATH ["AWS Lambda — production only"]
+            LAMBDA["Event Ingestion\nhandler.py"]
+            IEP["internal_station_event()\nviews.py\nPOST /internal/station-event/"]
+        end
     end
 
     DB[("PostgreSQL")]
@@ -189,7 +192,8 @@ flowchart TD
     MQTT -->|"station/id/events"| LOCAL
     MQTT -->|"station/id/events"| LAMBDA
     LOCAL -->|"station_id + payload"| EH
-    LAMBDA -->|"station_id + payload"| EH
+    LAMBDA -->|"POST station_id + payload"| IEP
+    IEP -->|"station_id + payload"| EH
 
     %% Telemetry ingestion path — telemetry topic
     MQTT -->|"station/id/telemetry"| LOCAL
@@ -225,9 +229,11 @@ flowchart TD
 | View | `commands/views.py` | HTTP request/response | MQTT, DB |
 | Command service | `commands/services.py` | Business rules, DB | MQTT payload format |
 | IoT publisher | `iot/publisher.py` | MQTT protocol | Business rules |
+| Internal view | `iot/views.py` | Auth (shared secret), HTTP | Business rules, DB |
 | Event handler | `iot/event_handler.py` | MQTT payload fields | Business rules, DB |
 | Ride service | `rides/services.py` | Ride/Bike/Dock state | MQTT, HTTP |
 | Station service | `stations/services.py` | Dock/Station state, telemetry reconciliation | MQTT, HTTP, Rides |
+| Lambda | `lambda/event_ingestion/handler.py` | IoT Core event shape, Django internal URL | Business rules, DB |
 
 ## Bike → Dock Mapping (Critical)
 
@@ -257,6 +263,16 @@ In local development AWS IoT Core and Lambda are replaced by two local processes
 | Real station hardware | `python -m station_sim.main` — simulates a fleet of stations, subscribes to `station/+/cmd`, publishes events + telemetry every 30s |
 
 The backend publishes to Mosquitto via paho-mqtt (`MQTT_BROKER_TYPE=local`). Everything else — models, services, event_handler — is identical between local and production.
+
+**IoT Core Rule SQL (production — configured in #7):**
+```sql
+-- Rule 1: station events
+SELECT *, topic(2) AS station_id FROM 'station/+/events'
+
+-- Rule 2: telemetry
+SELECT *, topic(2) AS station_id FROM 'station/+/telemetry'
+```
+`topic(2)` extracts the station ID from the topic path, e.g. `station/S001/events` → `station_id = "S001"`. Both rules target the same Lambda (event ingestion). The Lambda strips `station_id` from the payload before forwarding to Django, since it was injected by the Rule and is not part of the original MQTT message.
 
 **Starting the full local stack:**
 ```bash

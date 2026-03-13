@@ -105,3 +105,7 @@ SIMPLE_JWT = {
 COMMAND_TTL_SECONDS = 10
 # MQTT_BROKER_TYPE, MQTT_BROKER_HOST, MQTT_BROKER_PORT are defined per environment
 # AWS_REGION, AWS_IOT_ENDPOINT are defined in production.py only
+
+# Internal API secret — used to authenticate Lambda → Django calls.
+# Must be set in production. Not needed for local dev (mqtt_listener bypasses HTTP).
+INTERNAL_API_SECRET = os.environ.get("INTERNAL_API_SECRET", "")

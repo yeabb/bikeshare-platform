@@ -1,0 +1,1 @@
+# No third-party dependencies — handler uses only Python stdlib (urllib, json, logging, os).
