@@ -234,8 +234,8 @@ flowchart TD
 | Ride service | `rides/services.py` | Ride/Bike/Dock state | MQTT, HTTP |
 | Station service | `stations/services.py` | Dock/Station state, telemetry reconciliation | MQTT, HTTP, Rides |
 | Lambda — event ingestion | `infra/aws/lambdas/event_ingestion/handler.py` | IoT Core event shape, Django internal URL | Business rules, DB |
-| Lambda — timeout sweep | `infra/aws/lambdas/timeout_sweep/handler.py` | CloudWatch schedule, Django internal URL | Business rules, DB |
-| Lambda — station heartbeat | `infra/aws/lambdas/station_heartbeat/handler.py` | CloudWatch schedule, Django internal URL | Business rules, DB |
+| Lambda — timeout sweep | `infra/aws/lambdas/timeout_sweep/handler.py` | EventBridge Scheduler, Django internal URL | Business rules, DB |
+| Lambda — station heartbeat | `infra/aws/lambdas/station_heartbeat/handler.py` | EventBridge Scheduler, Django internal URL | Business rules, DB |
 
 ## Bike → Dock Mapping (Critical)
 
@@ -260,7 +260,7 @@ In local development AWS IoT Core and Lambda are replaced by two local processes
 |------------|-----------------|
 | AWS IoT Core | Mosquitto (Docker) |
 | Lambda ingestion function | `python manage.py mqtt_listener` — subscribes to `station/+/events` and `station/+/telemetry`, calls `event_handler` directly |
-| EventBridge Scheduler (every 10s) → Lambda timeout sweep | `python manage.py sweep_timeouts` — marks stale PENDING commands TIMEOUT every 5s |
+| EventBridge Scheduler (every 1 min) → Lambda timeout sweep | `python manage.py sweep_timeouts` — marks stale PENDING commands TIMEOUT every 5s |
 | EventBridge Scheduler (every 60s) → Lambda heartbeat | `python manage.py station_heartbeat` — marks silent stations INACTIVE every 60s |
 | Real station hardware | `python -m station_sim.main` — simulates a fleet of stations, subscribes to `station/+/cmd`, publishes events + telemetry every 30s |
 

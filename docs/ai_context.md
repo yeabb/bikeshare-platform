@@ -45,8 +45,8 @@ This is updated by:
 | Event router | `apps/iot/event_handler.py` | Parses event type, dispatches to correct service |
 | Dock events | `apps/stations/services.py` | `handle_bike_undocked`, `handle_dock_fault`, etc. |
 | MQTT listener | `apps/iot/management/commands/mqtt_listener.py` | Local dev only — bridges Mosquitto → event_handler (Lambda does this in production) |
-| Timeout sweep | `apps/commands/management/commands/sweep_timeouts.py` | Local dev only — marks stale PENDING commands TIMEOUT (CloudWatch + Lambda does this in production) |
-| Station heartbeat | `apps/stations/management/commands/station_heartbeat.py` | Local dev only — marks silent stations INACTIVE every 60s (CloudWatch + Lambda does this in production) |
+| Timeout sweep | `apps/commands/management/commands/sweep_timeouts.py` | Local dev only — marks stale PENDING commands TIMEOUT (EventBridge Scheduler + Lambda does this in production) |
+| Station heartbeat | `apps/stations/management/commands/station_heartbeat.py` | Local dev only — marks silent stations INACTIVE every 60s (EventBridge Scheduler + Lambda does this in production) |
 | Seed script | `apps/common/management/commands/seed_dev_data.py` | Populates DB from simulator/fleet.yml |
 | Station simulator | `simulator/station_sim/main.py` | Simulates fleet of stations over MQTT (local dev only) — publishes STATION_TELEMETRY every 30s |
 | User simulator | `simulator/user_sim/main.py` | Drives the HTTP API flow for each user in fleet.yml (auth → unlock → poll). Replaces manual curl commands for local testing. |
@@ -189,7 +189,7 @@ When a station comes back online and resumes sending telemetry, `reconcile_telem
 **Implementation:**
 - Logic: `apps/stations/services.py:station_heartbeat_check()`
 - Local runner: `python manage.py station_heartbeat` — runs as the `heartbeat` process in Procfile
-- Production: CloudWatch Scheduled Rule triggers a Lambda every 60 seconds
+- Production: EventBridge Scheduler triggers a Lambda every 60 seconds
 
 ---
 
@@ -206,10 +206,10 @@ and marks them `TIMEOUT`, restoring the dock to `OCCUPIED`.
 **Implementation:**
 - Logic: `apps/commands/services.py:sweep_timed_out_commands()`
 - Local runner: `python manage.py sweep_timeouts` — a `while True` loop every 5 seconds, runs as the `sweep` process in Procfile
-- Production: AWS CloudWatch Scheduled Rule triggers a Lambda every 10 seconds calling the same `sweep_timed_out_commands()` function — Celery/Redis deliberately not used since we're going to AWS
+- Production: EventBridge Scheduler triggers a Lambda every 1 minute calling the same `sweep_timed_out_commands()` function — Celery/Redis deliberately not used since we're going to AWS
 
 **Why not Celery + Redis:**
-Celery is worth adding when you need retry logic and queuing for async tasks like SMS and payments. The timeout sweep is a simple periodic DB query — CloudWatch + Lambda is the right production solution, making Celery unnecessary overhead for this use case.
+Celery is worth adding when you need retry logic and queuing for async tasks like SMS and payments. The timeout sweep is a simple periodic DB query — EventBridge Scheduler + Lambda is the right production solution, making Celery unnecessary overhead for this use case.
 
 ---
 
