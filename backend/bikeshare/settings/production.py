@@ -17,7 +17,17 @@ def _require_env(key: str) -> str:
 
 DEBUG = False
 
-ALLOWED_HOSTS = _require_env("ALLOWED_HOSTS").split(",")
+# Allow all hosts for now — ALB sits in front and handles routing.
+# Tighten this to the ALB DNS name once the domain is confirmed.
+ALLOWED_HOSTS = ["*"]
+
+# Whitenoise serves static files (Django admin, DRF browsable API)
+MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+] + MIDDLEWARE[1:]  # type: ignore[name-defined]  # noqa: F405
+
+STATIC_ROOT = BASE_DIR / "staticfiles"  # type: ignore[name-defined]  # noqa: F405
 
 # MQTT — always AWS in production
 MQTT_BROKER_TYPE = "aws"

@@ -1,0 +1,17 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements/base.txt requirements/base.txt
+RUN pip install --no-cache-dir -r requirements/base.txt
+
+COPY . .
+
+ENV DJANGO_SETTINGS_MODULE=bikeshare.settings.production
+ENV PYTHONUNBUFFERED=1
+
+EXPOSE 8000
+
+# collectstatic runs at startup (not build time) so it can use production
+# settings without needing env vars baked into the image.
+CMD ["sh", "-c", "python manage.py collectstatic --noinput && python manage.py migrate --noinput && gunicorn bikeshare.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 60"]

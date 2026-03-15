@@ -1,9 +1,42 @@
 import * as cdk from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
+import { BikeshareBackendStack } from '../lib/stacks/backend-stack';
 import { BikeshareLambdaStack } from '../lib/stacks/lambda-stack';
 import { BikeshareSchedulerStack } from '../lib/stacks/scheduler-stack';
 
 const env = { account: '446740421737', region: 'us-east-1' };
+
+describe('BikeshareBackendStack', () => {
+  const app = new cdk.App();
+  const stack = new BikeshareBackendStack(app, 'TestBackendStack', { env });
+  const template = Template.fromStack(stack);
+
+  test('creates a VPC', () => {
+    template.resourceCountIs('AWS::EC2::VPC', 1);
+  });
+
+  test('creates an ECS cluster', () => {
+    template.hasResourceProperties('AWS::ECS::Cluster', {
+      ClusterName: 'bikeshare',
+    });
+  });
+
+  test('creates an RDS PostgreSQL instance', () => {
+    template.hasResourceProperties('AWS::RDS::DBInstance', {
+      DBInstanceIdentifier: 'bikeshare-db',
+      DBName: 'bikeshare',
+      Engine: 'postgres',
+    });
+  });
+
+  test('creates three Secrets Manager secrets', () => {
+    template.resourceCountIs('AWS::SecretsManager::Secret', 3);
+  });
+
+  test('creates an ALB', () => {
+    template.resourceCountIs('AWS::ElasticLoadBalancingV2::LoadBalancer', 1);
+  });
+});
 
 describe('BikeshareLambdaStack', () => {
   const app = new cdk.App();
@@ -35,10 +68,10 @@ describe('BikeshareSchedulerStack', () => {
     template.resourceCountIs('AWS::Scheduler::Schedule', 2);
   });
 
-  test('timeout sweep uses 10-second rate', () => {
+  test('timeout sweep uses 1-minute rate', () => {
     template.hasResourceProperties('AWS::Scheduler::Schedule', {
       Name: 'bikeshare-timeout-sweep',
-      ScheduleExpression: 'rate(10 seconds)',
+      ScheduleExpression: 'rate(1 minute)',
     });
   });
 

@@ -1,11 +1,18 @@
 from django.contrib import admin
+from django.http import JsonResponse
 from django.urls import include, path
 
 from apps.commands.views import internal_sweep
 from apps.iot.views import internal_station_event
 from apps.stations.views import internal_heartbeat
 
+
+def health(request):
+    return JsonResponse({"status": "ok"})
+
+
 urlpatterns = [
+    path("health/", health),
     path("admin/", admin.site.urls),
     path("api/v1/auth/", include("apps.users.urls")),
     path("api/v1/stations/", include("apps.stations.urls")),
