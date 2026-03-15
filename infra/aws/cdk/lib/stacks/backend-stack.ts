@@ -27,7 +27,7 @@ export class BikeshareBackendStack extends cdk.Stack {
     // -------------------------------------------------------------------------
     const vpc = new ec2.Vpc(this, 'Vpc', {
       vpcName: 'bikeshare-vpc',
-      maxAzs: 2,
+      availabilityZones: ['us-east-1a', 'us-east-1b'],
       natGateways: 0,
       subnetConfiguration: [
         {
@@ -49,7 +49,7 @@ export class BikeshareBackendStack extends cdk.Stack {
     const albSg = new ec2.SecurityGroup(this, 'AlbSg', {
       vpc,
       securityGroupName: 'bikeshare-alb-sg',
-      description: 'ALB — allows HTTP from internet',
+      description: 'ALB - allows HTTP from internet',
     });
     albSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), 'HTTP from internet');
 
@@ -57,7 +57,7 @@ export class BikeshareBackendStack extends cdk.Stack {
     const ecsSg = new ec2.SecurityGroup(this, 'EcsSg', {
       vpc,
       securityGroupName: 'bikeshare-ecs-sg',
-      description: 'ECS — allows traffic from ALB only',
+      description: 'ECS - allows traffic from ALB only',
     });
     ecsSg.addIngressRule(albSg, ec2.Port.tcp(8000), 'From ALB');
 
@@ -65,7 +65,7 @@ export class BikeshareBackendStack extends cdk.Stack {
     const rdsSg = new ec2.SecurityGroup(this, 'RdsSg', {
       vpc,
       securityGroupName: 'bikeshare-rds-sg',
-      description: 'RDS — allows PostgreSQL from ECS only',
+      description: 'RDS - allows PostgreSQL from ECS only',
     });
     rdsSg.addIngressRule(ecsSg, ec2.Port.tcp(5432), 'From ECS');
 
