@@ -15,6 +15,7 @@ subgraph EDGE["AWS Edge"]
     R53["Route 53: api.bikeshare.com"]
     ALB[Application Load Balancer]
     ECS[Django Backend API]
+    DB[("PostgreSQL")]
 end
 
 subgraph STATION_LAYER["Station Layer"]
@@ -35,35 +36,33 @@ subgraph LAMBDAS["AWS Lambda"]
 end
 
 subgraph SCHEDULE["EventBridge Scheduler"]
-    SWEEP[every 10s]
-    HBEAT[every 60s]
+    SWEEP["Timeout Sweep — every 1 min"]
+    HBEAT["Station Heartbeat — every 1 min"]
 end
 
-DB[("PostgreSQL")]
-
-%% HTTP — inbound + polling
+%% HTTP — inbound
 CLIENTS -->|"HTTPS + JWT"| R53
 R53 --> ALB --> ECS
-AND & IOS -->|"Poll /commands/{id}"| ECS
 
 %% Backend → DB and IoT
-ECS -->|"1. Create Command [PENDING]"| DB
-ECS -->|"2. Publish UNLOCK"| BROKER
+ECS -->|"reads / writes"| DB
+ECS -->|"Publish UNLOCK"| BROKER
 
 %% IoT ↔ Stations
-BROKER -->|"UNLOCK cmd"| SSIM & STN
-SSIM & STN -->|"events + telemetry"| BROKER
+SSIM & STN <-->|"← UNLOCK cmd / events + telemetry →"| BROKER
 
 %% IoT Rules → Lambda
 BROKER --> RULE1 & RULE2
 RULE1 & RULE2 --> LINGEST
 
-%% Lambda → DB
-LINGEST -->|"Update Command / Ride / Dock / Bike / Station state"| DB
+%% Scheduled jobs → Lambda
+SWEEP --> LSWEEP
+HBEAT --> LHBEAT
 
-%% Scheduled jobs
-SWEEP --> LSWEEP -->|"PENDING → TIMEOUT"| DB
-HBEAT --> LHBEAT -->|"ACTIVE → INACTIVE"| DB
+%% Lambda → ALB → Django → DB (Lambda never touches DB directly)
+LINGEST -->|"POST /internal/station-event/"| ALB
+LSWEEP -->|"POST /internal/commands/sweep/"| ALB
+LHBEAT -->|"POST /internal/stations/heartbeat/"| ALB
 ```
 
 ## Unlock + Ride Lifecycle (Sequence)
@@ -224,18 +223,18 @@ flowchart TD
 
 ### What each layer is responsible for
 
-| Layer | File | Knows about | Does NOT know about |
-|-------|------|-------------|---------------------|
-| View | `commands/views.py` | HTTP request/response | MQTT, DB |
-| Command service | `commands/services.py` | Business rules, DB | MQTT payload format |
-| IoT publisher | `iot/publisher.py` | MQTT protocol | Business rules |
-| Internal view | `iot/views.py` | Auth (shared secret), HTTP | Business rules, DB |
-| Event handler | `iot/event_handler.py` | MQTT payload fields | Business rules, DB |
-| Ride service | `rides/services.py` | Ride/Bike/Dock state | MQTT, HTTP |
-| Station service | `stations/services.py` | Dock/Station state, telemetry reconciliation | MQTT, HTTP, Rides |
-| Lambda — event ingestion | `infra/aws/lambdas/event_ingestion/handler.py` | IoT Core event shape, Django internal URL | Business rules, DB |
-| Lambda — timeout sweep | `infra/aws/lambdas/timeout_sweep/handler.py` | EventBridge Scheduler, Django internal URL | Business rules, DB |
-| Lambda — station heartbeat | `infra/aws/lambdas/station_heartbeat/handler.py` | EventBridge Scheduler, Django internal URL | Business rules, DB |
+| Layer                      | File                                             | Knows about                                  | Does NOT know about |
+| -------------------------- | ------------------------------------------------ | -------------------------------------------- | ------------------- |
+| View                       | `commands/views.py`                              | HTTP request/response                        | MQTT, DB            |
+| Command service            | `commands/services.py`                           | Business rules, DB                           | MQTT payload format |
+| IoT publisher              | `iot/publisher.py`                               | MQTT protocol                                | Business rules      |
+| Internal view              | `iot/views.py`                                   | Auth (shared secret), HTTP                   | Business rules, DB  |
+| Event handler              | `iot/event_handler.py`                           | MQTT payload fields                          | Business rules, DB  |
+| Ride service               | `rides/services.py`                              | Ride/Bike/Dock state                         | MQTT, HTTP          |
+| Station service            | `stations/services.py`                           | Dock/Station state, telemetry reconciliation | MQTT, HTTP, Rides   |
+| Lambda — event ingestion   | `infra/aws/lambdas/event_ingestion/handler.py`   | IoT Core event shape, Django internal URL    | Business rules, DB  |
+| Lambda — timeout sweep     | `infra/aws/lambdas/timeout_sweep/handler.py`     | EventBridge Scheduler, Django internal URL   | Business rules, DB  |
+| Lambda — station heartbeat | `infra/aws/lambdas/station_heartbeat/handler.py` | EventBridge Scheduler, Django internal URL   | Business rules, DB  |
 
 ## Bike → Dock Mapping (Critical)
 
@@ -246,6 +245,7 @@ bike_id → (station_id, dock_id, status)
 ```
 
 This mapping is updated by:
+
 - `BIKE_DOCKED` event → bike now at new station/dock
 - `BIKE_UNDOCKED` event → bike no longer at dock
 - `UNLOCK_RESULT SUCCESS` → bike transitions to IN_USE
@@ -256,17 +256,18 @@ This mapping is updated by:
 
 In local development AWS IoT Core and Lambda are replaced by two local processes:
 
-| Production | Local equivalent |
-|------------|-----------------|
-| AWS IoT Core | Mosquitto (Docker) |
-| Lambda ingestion function | `python manage.py mqtt_listener` — subscribes to `station/+/events` and `station/+/telemetry`, calls `event_handler` directly |
-| EventBridge Scheduler (every 1 min) → Lambda timeout sweep | `python manage.py sweep_timeouts` — marks stale PENDING commands TIMEOUT every 5s |
-| EventBridge Scheduler (every 60s) → Lambda heartbeat | `python manage.py station_heartbeat` — marks silent stations INACTIVE every 60s |
-| Real station hardware | `python -m station_sim.main` — simulates a fleet of stations, subscribes to `station/+/cmd`, publishes events + telemetry every 30s |
+| Production                                                 | Local equivalent                                                                                                                    |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| AWS IoT Core                                               | Mosquitto (Docker)                                                                                                                  |
+| Lambda ingestion function                                  | `python manage.py mqtt_listener` — subscribes to `station/+/events` and `station/+/telemetry`, calls `event_handler` directly       |
+| EventBridge Scheduler (every 1 min) → Lambda timeout sweep | `python manage.py sweep_timeouts` — marks stale PENDING commands TIMEOUT every 5s                                                   |
+| EventBridge Scheduler (every 60s) → Lambda heartbeat       | `python manage.py station_heartbeat` — marks silent stations INACTIVE every 60s                                                     |
+| Real station hardware                                      | `python -m station_sim.main` — simulates a fleet of stations, subscribes to `station/+/cmd`, publishes events + telemetry every 30s |
 
 The backend publishes to Mosquitto via paho-mqtt (`MQTT_BROKER_TYPE=local`). Everything else — models, services, event_handler — is identical between local and production.
 
 **IoT Core Rule SQL (production — configured in #7):**
+
 ```sql
 -- Rule 1: station events
 SELECT *, topic(2) AS station_id FROM 'station/+/events'
@@ -274,9 +275,11 @@ SELECT *, topic(2) AS station_id FROM 'station/+/events'
 -- Rule 2: telemetry
 SELECT *, topic(2) AS station_id FROM 'station/+/telemetry'
 ```
+
 `topic(2)` extracts the station ID from the topic path, e.g. `station/S001/events` → `station_id = "S001"`. Both rules target the same Lambda (event ingestion). The Lambda strips `station_id` from the payload before forwarding to Django, since it was injected by the Rule and is not part of the original MQTT message.
 
 **Starting the full local stack:**
+
 ```bash
 make setup   # first time only
 make dev     # starts everything
@@ -287,11 +290,11 @@ Each station has a configurable behavior: `always_success`, `always_fail`, `flak
 
 ## Key Design Constraints
 
-| Constraint | Why |
-|------------|-----|
-| Ride starts only on UNLOCK_RESULT SUCCESS | Never create a ride for a locked bike |
-| Ride ends only on BIKE_DOCKED event | HTTP-based end would require trusting the client |
-| Command is idempotent | Duplicate UNLOCK_RESULT events must not create duplicate rides |
-| BIKE_DOCKED is idempotent | Already-completed rides must be ignored |
-| bikeId in all dock events | Required to map events back to rides |
-| Command has expires_at | Prevents permanently stuck PENDING commands |
+| Constraint                                | Why                                                            |
+| ----------------------------------------- | -------------------------------------------------------------- |
+| Ride starts only on UNLOCK_RESULT SUCCESS | Never create a ride for a locked bike                          |
+| Ride ends only on BIKE_DOCKED event       | HTTP-based end would require trusting the client               |
+| Command is idempotent                     | Duplicate UNLOCK_RESULT events must not create duplicate rides |
+| BIKE_DOCKED is idempotent                 | Already-completed rides must be ignored                        |
+| bikeId in all dock events                 | Required to map events back to rides                           |
+| Command has expires_at                    | Prevents permanently stuck PENDING commands                    |
