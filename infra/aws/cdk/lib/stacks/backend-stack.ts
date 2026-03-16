@@ -1,5 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import { Platform } from 'aws-cdk-lib/aws-ecr-assets';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ecs_patterns from 'aws-cdk-lib/aws-ecs-patterns';
 import * as logs from 'aws-cdk-lib/aws-logs';
@@ -140,7 +141,7 @@ export class BikeshareBackendStack extends cdk.Stack {
         // to ECR automatically during cdk deploy.
         image: ecs.ContainerImage.fromAsset(
           path.join(__dirname, '../../../../../backend'),
-          { file: 'Dockerfile.prod' },
+          { file: 'Dockerfile.prod', platform: Platform.LINUX_AMD64 },
         ),
         containerPort: 8000,
         environment: {
