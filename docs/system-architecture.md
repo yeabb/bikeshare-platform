@@ -5,6 +5,17 @@
 ```mermaid
 graph TD
 
+subgraph SCHEDULE["EventBridge Scheduler"]
+    SWEEP["Timeout Sweep — every 1 min"]
+    HBEAT["Station Heartbeat — every 1 min"]
+end
+
+subgraph LAMBDAS["AWS Lambda"]
+    LINGEST[Event Ingestion]
+    LSWEEP[Timeout Sweep]
+    LHBEAT[Station Heartbeat]
+end
+
 subgraph CLIENTS["Mobile Clients"]
     AND[Android App]
     IOS[iOS App]
@@ -20,24 +31,13 @@ end
 
 subgraph STATION_LAYER["Station Layer"]
     SSIM["Station Simulator (local dev)"]
-    STN["Real Stations — nRF9160 (later)"]
+    STN["Real Stations — nRF9160"]
 end
 
 subgraph IOT_LAYER["AWS IoT Core"]
     BROKER[Broker]
     RULE1["IoT Rule 1: station/+/events"]
     RULE2["IoT Rule 2: station/+/telemetry"]
-end
-
-subgraph LAMBDAS["AWS Lambda"]
-    LINGEST[Event Ingestion]
-    LSWEEP[Timeout Sweep]
-    LHBEAT[Station Heartbeat]
-end
-
-subgraph SCHEDULE["EventBridge Scheduler"]
-    SWEEP["Timeout Sweep — every 1 min"]
-    HBEAT["Station Heartbeat — every 1 min"]
 end
 
 %% HTTP — inbound
@@ -49,7 +49,7 @@ ECS -->|"reads / writes"| DB
 ECS -->|"Publish UNLOCK"| BROKER
 
 %% IoT ↔ Stations
-SSIM & STN <-->|"← UNLOCK cmd / events + telemetry →"| BROKER
+SSIM & STN <-->|"←UNLOCK/events+telem→"| BROKER
 
 %% IoT Rules → Lambda
 BROKER --> RULE1 & RULE2
