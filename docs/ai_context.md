@@ -225,9 +225,14 @@ Celery is worth adding when you need retry logic and queuing for async tasks lik
 
 - SMS OTP (stubbed — returns OTP in response when DEBUG=True)
 - Stale rides stuck ACTIVE for an unusually long time (two-snapshot catches most cases; rides that slip through need a manual ops endpoint — task #12)
-- AWS Lambda ingestion function (mqtt_listener management command is the local analog)
-- AWS Lambda timeout sweep + heartbeat (sweep_timeouts and station_heartbeat management commands are the local analogs)
-- AWS IoT Core setup (Things, certificates, policies, IoT Rules)
-- CloudWatch Scheduled Rules for timeout sweep + station heartbeat
+- Handle split-brain: UNLOCK_RESULT lost but bike physically unlocked (task #14)
 - Payment processing
 - Android/iOS apps
+
+## What Is Live on AWS
+
+- **BikeshareBackendStack**: VPC, RDS PostgreSQL (`bikeshare-db`), ECS Fargate (Django), ALB
+  - ALB: `http://Bikesh-Servi-0FYN2l2GYpbE-1416179423.us-east-1.elb.amazonaws.com`
+- **BikeshareLambdaStack**: event-ingestion, timeout-sweep, station-heartbeat — all wired to ALB
+- **BikeshareIotStack**: IoT Things (S001–S005), certificates, per-station policies, IoT Rules
+- **BikeshareSchedulerStack**: EventBridge Scheduler — timeout sweep (1 min), station heartbeat (1 min)
