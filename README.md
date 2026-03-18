@@ -1,7 +1,5 @@
 # Bikeshare Platform
 
-A dock-based bike sharing system. Riders scan a bike QR code, the backend locates the dock, sends an unlock command to the station over MQTT, and the station responds with the result. Ride ends when the bike is physically docked at any station.
-
 See [`docs/system-architecture.md`](docs/system-architecture.md) for full architecture diagrams and design decisions.
 
 ## Architecture
