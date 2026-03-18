@@ -4,7 +4,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from apps.users.views import RequestOTPView, VerifyOTPView
 
 urlpatterns = [
-    path("request-otp", RequestOTPView.as_view()),
-    path("verify-otp", VerifyOTPView.as_view()),
-    path("token/refresh", TokenRefreshView.as_view()),
+    path("request-otp/", RequestOTPView.as_view()),
+    path("verify-otp/", VerifyOTPView.as_view()),
+    path("token/refresh/", TokenRefreshView.as_view()),
 ]

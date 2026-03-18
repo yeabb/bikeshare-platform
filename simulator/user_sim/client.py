@@ -24,14 +24,14 @@ class BikeShareClient:
         so no SMS is needed for local dev.
         """
         resp = requests.post(
-            f"{self.base_url}/api/v1/auth/request-otp",
+            f"{self.base_url}/api/v1/auth/request-otp/",
             json={"phone": self.phone},
         )
         resp.raise_for_status()
         otp = resp.json()["otp"]
 
         resp = requests.post(
-            f"{self.base_url}/api/v1/auth/verify-otp",
+            f"{self.base_url}/api/v1/auth/verify-otp/",
             json={"phone": self.phone, "otp": otp},
         )
         resp.raise_for_status()
