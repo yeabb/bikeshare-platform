@@ -41,6 +41,7 @@ services:
     environment:
       DJANGO_SETTINGS_MODULE: bikeshare.settings.local
       POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
       POSTGRES_DB: bikeshare
       POSTGRES_USER: bikeshare
       POSTGRES_PASSWORD: bikeshare
