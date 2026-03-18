@@ -4,6 +4,71 @@ A dock-based bike sharing system. Riders scan a bike QR code, the backend locate
 
 See [`docs/system-architecture.md`](docs/system-architecture.md) for full architecture diagrams and design decisions.
 
+## Architecture
+
+```mermaid
+graph TD
+
+subgraph SCHEDULE["EventBridge Scheduler"]
+    SWEEP["Timeout Sweep — every 1 min"]
+    HBEAT["Station Heartbeat — every 1 min"]
+end
+
+subgraph LAMBDAS["AWS Lambda"]
+    LINGEST[Event Ingestion]
+    LSWEEP[Timeout Sweep]
+    LHBEAT[Station Heartbeat]
+end
+
+subgraph CLIENTS["Mobile Clients"]
+    AND[Android App]
+    IOS[iOS App]
+    USIM[User Simulator]
+end
+
+subgraph EDGE["AWS Edge"]
+    R53["Route 53: api.bikeshare.com"]
+    ALB[Application Load Balancer]
+    ECS[Django Backend API]
+    DB[("PostgreSQL")]
+end
+
+subgraph STATION_LAYER["Station Layer"]
+    SSIM["Station Simulator (local dev)"]
+    STN["Real Stations — nRF9160"]
+end
+
+subgraph IOT_LAYER["AWS IoT Core"]
+    BROKER[Broker]
+    RULE1["IoT Rule 1: station/+/events"]
+    RULE2["IoT Rule 2: station/+/telemetry"]
+end
+
+%% HTTP — inbound
+CLIENTS -->|"HTTPS + JWT"| R53
+R53 --> ALB --> ECS
+
+%% Backend → DB and IoT
+ECS -->|"reads / writes"| DB
+ECS -->|"Publish UNLOCK"| BROKER
+
+%% IoT ↔ Stations
+SSIM & STN <-->|"←UNLOCK/events+telem→"| BROKER
+
+%% IoT Rules → Lambda
+BROKER --> RULE1 & RULE2
+RULE1 & RULE2 --> LINGEST
+
+%% Scheduled jobs → Lambda
+SWEEP --> LSWEEP
+HBEAT --> LHBEAT
+
+%% Lambda → ALB → Django → DB (Lambda never touches DB directly)
+LINGEST -->|"POST /internal/station-event/"| ALB
+LSWEEP -->|"POST /internal/commands/sweep/"| ALB
+LHBEAT -->|"POST /internal/stations/heartbeat/"| ALB
+```
+
 ---
 
 ## Prerequisites
