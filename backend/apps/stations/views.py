@@ -7,8 +7,23 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.stations.models import Station, StationStatus
-from apps.stations.serializers import InactiveStationSerializer, StationStateSerializer
+from apps.stations.serializers import InactiveStationSerializer, StationStateSerializer, StationSummarySerializer
 from apps.stations.services import station_heartbeat_check
+
+
+class StationListView(APIView):
+    """
+    Returns all ACTIVE stations with their available bike and open dock counts.
+    Used by the mobile app to populate the map pins and station list.
+    prefetch_related avoids N+1 queries — docks + bikes loaded in one extra query.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        stations = Station.objects.filter(
+            status=StationStatus.ACTIVE
+        ).prefetch_related("docks__current_bike")
+        return Response(StationSummarySerializer(stations, many=True).data)
 
 
 class StationStateView(APIView):

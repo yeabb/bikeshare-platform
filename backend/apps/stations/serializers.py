@@ -24,6 +24,27 @@ class StationStateSerializer(serializers.ModelSerializer):
         fields = ["station_id", "name", "status", "lat", "lng", "docks"]
 
 
+class StationSummarySerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for the station list endpoint.
+    Returns only what the map pins and list cards need — no dock details.
+    available_bikes and open_docks are computed from dock states.
+    """
+    station_id = serializers.CharField(source="id")
+    available_bikes = serializers.SerializerMethodField()
+    open_docks = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Station
+        fields = ["station_id", "name", "lat", "lng", "status", "available_bikes", "open_docks"]
+
+    def get_available_bikes(self, obj):
+        return sum(1 for dock in obj.docks.all() if dock.current_bike is not None)
+
+    def get_open_docks(self, obj):
+        return sum(1 for dock in obj.docks.all() if dock.current_bike is None)
+
+
 class InactiveStationSerializer(serializers.ModelSerializer):
     station_id = serializers.CharField(source="id")
 
