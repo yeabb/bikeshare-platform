@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
-from apps.stations.models import Dock, Station
+from apps.stations.models import Dock, DockState, Station
+from apps.bikes.models import BikeStatus
 
 
 class DockSerializer(serializers.ModelSerializer):
@@ -39,10 +40,16 @@ class StationSummarySerializer(serializers.ModelSerializer):
         fields = ["station_id", "name", "lat", "lng", "status", "available_bikes", "open_docks"]
 
     def get_available_bikes(self, obj):
-        return sum(1 for dock in obj.docks.all() if dock.current_bike is not None)
+        return sum(
+            1 for dock in obj.docks.all()
+            if dock.current_bike is not None and dock.current_bike.status == BikeStatus.AVAILABLE
+        )
 
     def get_open_docks(self, obj):
-        return sum(1 for dock in obj.docks.all() if dock.current_bike is None)
+        return sum(
+            1 for dock in obj.docks.all()
+            if dock.state == DockState.AVAILABLE and dock.current_bike is None
+        )
 
 
 class InactiveStationSerializer(serializers.ModelSerializer):
