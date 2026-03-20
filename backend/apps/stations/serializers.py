@@ -34,10 +34,11 @@ class StationSummarySerializer(serializers.ModelSerializer):
     station_id = serializers.CharField(source="id")
     available_bikes = serializers.SerializerMethodField()
     open_docks = serializers.SerializerMethodField()
+    bike_ids = serializers.SerializerMethodField()
 
     class Meta:
         model = Station
-        fields = ["station_id", "name", "lat", "lng", "status", "available_bikes", "open_docks"]
+        fields = ["station_id", "name", "lat", "lng", "status", "available_bikes", "open_docks", "bike_ids"]
 
     def get_available_bikes(self, obj):
         return sum(
@@ -50,6 +51,12 @@ class StationSummarySerializer(serializers.ModelSerializer):
             1 for dock in obj.docks.all()
             if dock.state == DockState.AVAILABLE and dock.current_bike is None
         )
+
+    def get_bike_ids(self, obj):
+        return [
+            dock.current_bike.id for dock in obj.docks.all()
+            if dock.current_bike is not None and dock.current_bike.status == BikeStatus.AVAILABLE
+        ]
 
 
 class InactiveStationSerializer(serializers.ModelSerializer):
