@@ -1,9 +1,8 @@
 """
 Management command: seed_dev_data
 
-Reads simulator/fleet.yml and populates the database with stations, docks,
-bikes, and test users. Safe to run multiple times — uses get_or_create
-throughout so it won't duplicate data.
+Wipes all existing data and repopulates the database from simulator/fleet.yml.
+Running this multiple times always produces a clean state matching the fleet config.
 
 Usage:
     python manage.py seed_dev_data
@@ -17,6 +16,8 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from apps.bikes.models import Bike, BikeStatus
+from apps.rides.models import Ride
+from apps.commands.models import Command as UnlockCommand
 from apps.stations.models import Dock, DockState, Station, StationStatus
 from apps.users.models import User
 
@@ -48,74 +49,58 @@ class Command(BaseCommand):
         self.stdout.write(f"Loading fleet config from {fleet_path}")
 
         with transaction.atomic():
+            self._wipe()
             self._seed_stations(config.get("stations", []))
             self._seed_users(config.get("users", []))
 
         self.stdout.write(self.style.SUCCESS("Seed complete."))
 
+    def _wipe(self):
+        Ride.objects.all().delete()
+        UnlockCommand.objects.all().delete()
+        Bike.objects.all().delete()
+        Dock.objects.all().delete()
+        Station.objects.all().delete()
+        User.objects.all().delete()
+        self.stdout.write("  Wiped existing data.")
+
     def _seed_stations(self, stations_config):
         for station_cfg in stations_config:
-            station, created = Station.objects.get_or_create(
+            station = Station.objects.create(
                 id=station_cfg["id"],
-                defaults={
-                    "name": station_cfg["name"],
-                    "lat": station_cfg["lat"],
-                    "lng": station_cfg["lng"],
-                    "status": StationStatus.ACTIVE,
-                    "total_docks": len(station_cfg["docks"]),
-                },
+                name=station_cfg["name"],
+                lat=station_cfg["lat"],
+                lng=station_cfg["lng"],
+                status=StationStatus.ACTIVE,
+                total_docks=len(station_cfg["docks"]),
             )
-            action = "Created" if created else "Found"
-            self.stdout.write(f"  {action} station {station.id} — {station.name}")
-
+            self.stdout.write(f"  Created station {station.id} — {station.name}")
             self._seed_docks(station, station_cfg["docks"])
 
     def _seed_docks(self, station, docks_config):
         for dock_cfg in docks_config:
-            dock, created = Dock.objects.get_or_create(
+            dock = Dock.objects.create(
                 station=station,
                 dock_index=dock_cfg["index"],
-                defaults={"state": DockState.AVAILABLE},
+                state=DockState.AVAILABLE,
             )
 
             bike_id = dock_cfg.get("bike_id")
-
             if bike_id:
-                # Create or find the bike
-                bike, bike_created = Bike.objects.get_or_create(
+                bike = Bike.objects.create(
                     id=bike_id,
-                    defaults={
-                        "status": BikeStatus.AVAILABLE,
-                        "current_station": station,
-                        "current_dock": dock,
-                    },
+                    status=BikeStatus.AVAILABLE,
+                    current_station=station,
+                    current_dock=dock,
                 )
-
-                # If bike already existed, make sure its location is correct
-                if not bike_created:
-                    bike.current_station = station
-                    bike.current_dock = dock
-                    bike.status = BikeStatus.AVAILABLE
-                    bike.save(update_fields=["current_station", "current_dock", "status", "updated_at"])
-
-                # Keep dock in sync with bike
                 dock.state = DockState.OCCUPIED
                 dock.current_bike = bike
                 dock.save(update_fields=["state", "current_bike", "updated_at"])
-
-                b_action = "Created" if bike_created else "Found"
-                self.stdout.write(f"    Dock {dock.display_id} — {b_action} bike {bike_id}")
+                self.stdout.write(f"    Dock {dock.display_id} — bike {bike_id}")
             else:
-                dock.state = DockState.AVAILABLE
-                dock.current_bike = None
-                dock.save(update_fields=["state", "current_bike", "updated_at"])
                 self.stdout.write(f"    Dock {dock.display_id} — empty")
 
     def _seed_users(self, users_config):
         for user_cfg in users_config:
-            user, created = User.objects.get_or_create(phone=user_cfg["phone"])
-            if created:
-                user.status = "ACTIVE"
-                user.save(update_fields=["status"])
-            action = "Created" if created else "Found"
-            self.stdout.write(f"  {action} user {user.phone}")
+            User.objects.create(phone=user_cfg["phone"], status="ACTIVE")
+            self.stdout.write(f"  Created user {user_cfg['phone']}")
