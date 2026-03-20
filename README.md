@@ -124,40 +124,31 @@ make stop   # stops Docker containers
 
 ---
 
+## Make commands
+
+| Command | What it does |
+|---|---|
+| `make infra` | Starts Postgres + Mosquitto in Docker, detached (keeps running in background) |
+| `make dev` | Runs `make infra` first, then starts all 5 app processes via honcho (API, listener, sweep, heartbeat, sim) |
+| `make seed` | Wipes the DB completely and re-creates everything fresh from `fleet.yml`. Needs Postgres running but nothing else |
+| `make stop` | Stops and removes Docker containers (Postgres + Mosquitto) |
+| `make migrate` | Runs Django migrations |
+| `make shell` | Opens a Django shell |
+| `make test` | Runs the test suite |
+
+**Important:** `make dev` starts Docker in detached mode, so Ctrl+C only kills the app processes — Docker keeps running. `make stop` is the only thing that actually kills Docker.
+
 ## Routine dev workflow
 
-Before each test session, re-seed to reset bike positions back to the starting state from `fleet.yml`:
+To reset the DB and start clean between test sessions:
 
 ```bash
-make seed   # safe to run anytime, no duplicates
-make dev    # skip if already running
+# Ctrl+C to stop make dev (Docker keeps running)
+make seed   # wipes DB and re-seeds everything from fleet.yml
+make dev    # restarts all processes fresh — simulator reloads from fleet.yml
 ```
 
-Then in a second terminal, run the user simulator:
-
-```bash
-cd simulator
-
-# Single user
-.venv/bin/python -m user_sim.main --user +15550000001
-
-# All users concurrently
-.venv/bin/python -m user_sim.main
-
-# Override bike (useful after bikes have moved between stations)
-.venv/bin/python -m user_sim.main --user +15550000001 --bike B001
-```
-
-Watch Terminal 1 for the full station + backend event flow.
-
-**Full reset** (wipe DB and start clean):
-
-```bash
-make stop
-docker compose down -v   # removes volumes — DB is wiped
-make dev
-make seed
-```
+You must restart `make dev` after `make seed` because the station simulator holds bike positions in memory. If you only run `make seed` without restarting, the simulator's in-memory state will be out of sync with the DB.
 
 ---
 
@@ -216,11 +207,11 @@ Seeded from `simulator/fleet.yml`:
 
 | Station | Bikes | Unlock behavior |
 |---|---|---|
-| `S001` — Market & 5th | B001, B002, B003, B008 | `always_success` |
-| `S002` — Mission & 16th | B004, B005 | `flaky` (30% fail rate) |
-| `S003` — Castro & Market | B006 | `always_fail` |
-| `S004` — Caltrain Station | B007 | `timeout` (never responds) |
-| `S005` — Embarcadero | — | `silent_return` (unlocks succeed, BIKE_DOCKED suppressed) |
+| `S001` — Meskel Square | B001, B002, B003, B008 | `always_success` |
+| `S002` — Bole Medhanealem | B004, B005 | `flaky` (30% fail rate) |
+| `S003` — Mexico Square | B006 | `always_fail` |
+| `S004` — Piazza | B007 | `timeout` (never responds) |
+| `S005` — Megenagna | — | `silent_return` (unlocks succeed, BIKE_DOCKED suppressed) |
 
 ---
 
