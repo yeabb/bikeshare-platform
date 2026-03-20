@@ -23,9 +23,9 @@
 
 stations:
   - id: "S001"
-    name: "Market & 5th"
-    lat: 37.7749
-    lng: -122.4194
+    name: "Meskel Square"
+    lat: 9.0107
+    lng: 38.7615
     behavior: always_success
     docks:
       - index: 1
@@ -38,9 +38,9 @@ stations:
         bike_id: "B008"     # default bike for user +15550000004 (silent_return demo)
 
   - id: "S002"
-    name: "Mission & 16th"
-    lat: 37.7648
-    lng: -122.4197
+    name: "Bole Medhanealem"
+    lat: 8.9978
+    lng: 38.7964
     behavior: flaky
     fail_rate: 0.3          # 30% chance of failure
     failure_reason: "LATCH_FAULT"
@@ -55,9 +55,9 @@ stations:
         bike_id: null
 
   - id: "S003"
-    name: "Castro & Market"
-    lat: 37.7609
-    lng: -122.4350
+    name: "Mexico Square"
+    lat: 9.0220
+    lng: 38.7469
     behavior: always_fail
     failure_reason: "LATCH_FAULT"
     docks:
@@ -71,9 +71,9 @@ stations:
         bike_id: null
 
   - id: "S004"
-    name: "Caltrain Station"
-    lat: 37.7766
-    lng: -122.3950
+    name: "Piazza"
+    lat: 9.0334
+    lng: 38.7459
     behavior: timeout         # simulates station not responding
     docks:
       - index: 1
@@ -86,9 +86,9 @@ stations:
         bike_id: null
 
   - id: "S005"
-    name: "Embarcadero"
-    lat: 37.7955
-    lng: -122.3937
+    name: "Megenagna"
+    lat: 9.0246
+    lng: 38.8029
     behavior: silent_return   # unlocks succeed but BIKE_DOCKED is suppressed on return
     docks:                    # used to test stale ride reconciliation via telemetry
       - index: 1
