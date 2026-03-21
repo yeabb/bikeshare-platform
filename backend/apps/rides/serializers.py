@@ -7,8 +7,10 @@ class RideSerializer(serializers.ModelSerializer):
     ride_id = serializers.UUIDField()
     bike_id = serializers.CharField()
     start_station_id = serializers.CharField()
+    start_station_name = serializers.CharField(source="start_station.name")
     start_dock_index = serializers.IntegerField(source="start_dock.dock_index")
     end_station_id = serializers.CharField(allow_null=True)
+    end_station_name = serializers.SerializerMethodField()
     end_dock_index = serializers.SerializerMethodField()
     duration_sec = serializers.SerializerMethodField()
 
@@ -18,14 +20,19 @@ class RideSerializer(serializers.ModelSerializer):
             "ride_id",
             "bike_id",
             "start_station_id",
+            "start_station_name",
             "start_dock_index",
             "end_station_id",
+            "end_station_name",
             "end_dock_index",
             "started_at",
             "ended_at",
             "status",
             "duration_sec",
         ]
+
+    def get_end_station_name(self, obj):
+        return obj.end_station.name if obj.end_station else None
 
     def get_end_dock_index(self, obj):
         return obj.end_dock.dock_index if obj.end_dock else None
