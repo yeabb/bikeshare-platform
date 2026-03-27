@@ -2,7 +2,7 @@ import random
 
 from django.conf import settings
 from django.utils import timezone
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -63,9 +63,21 @@ class VerifyOTPView(APIView):
             {
                 "access": str(refresh.access_token),
                 "refresh": str(refresh),
-                "user": {"id": str(user.id), "phone": user.phone},
+                "user": {"id": str(user.id), "phone": user.phone, "name": user.name},
             }
         )
+
+
+class UpdateProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request):
+        name = request.data.get("name", "").strip()
+        if not name:
+            return Response({"error": "MISSING_NAME"}, status=400)
+        request.user.name = name
+        request.user.save(update_fields=["name"])
+        return Response({"name": name})
 
 
 def _generate_otp():

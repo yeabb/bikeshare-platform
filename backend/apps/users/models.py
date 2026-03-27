@@ -40,6 +40,7 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel):
         choices=UserStatus.choices,
         default=UserStatus.PENDING_VERIFICATION,
     )
+    name = models.CharField(max_length=100, blank=True, default="")
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
 
