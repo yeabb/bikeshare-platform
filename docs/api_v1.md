@@ -23,12 +23,14 @@ Request an OTP sent to the user's phone. Creates user account if first login.
 { "phone": "+15551234567" }
 ```
 
+Phone must be in **E.164 format** — a `+` followed by the country code and number, no spaces or dashes (e.g. `+12025551234`, `+251912345678`). Spaces and dashes are stripped automatically; numbers without a leading `+` are rejected.
+
 **Response 200:**
 ```json
 { "message": "OTP sent" }
 ```
 
-> **Dev only:** When `DEBUG=True`, the OTP is included in the response:
+> **Dev only:** When `DEBUG=True`, no SMS is sent and the OTP is included in the response for testing:
 > ```json
 > { "message": "OTP sent", "otp": "482910" }
 > ```
@@ -38,6 +40,8 @@ Request an OTP sent to the user's phone. Creates user account if first login.
 | Code | HTTP | Meaning |
 |------|------|---------|
 | `MISSING_PHONE` | 400 | `phone` field not provided |
+| `INVALID_PHONE` | 400 | Phone is not valid E.164 format |
+| `SMS_FAILED` | 503 | OTP was generated but SNS failed to dispatch the SMS |
 
 ---
 
@@ -60,7 +64,8 @@ Verify OTP and receive JWT tokens.
   "refresh": "<jwt_refresh_token>",
   "user": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
-    "phone": "+15551234567"
+    "phone": "+15551234567",
+    "name": "Alex"
   }
 }
 ```
