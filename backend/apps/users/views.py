@@ -1,4 +1,5 @@
 import random
+import re
 
 from django.conf import settings
 from django.utils import timezone
@@ -8,15 +9,20 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.users.models import User
+from apps.users.sms import send_otp_sms
 
 
 class RequestOTPView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        phone = request.data.get("phone")
-        if not phone:
+        raw_phone = request.data.get("phone")
+        if not raw_phone:
             return Response({"error": "MISSING_PHONE"}, status=400)
+
+        phone = _normalize_phone(raw_phone)
+        if phone is None:
+            return Response({"error": "INVALID_PHONE"}, status=400)
 
         otp = _generate_otp()
         expires_at = timezone.now() + timezone.timedelta(minutes=10)
@@ -26,10 +32,13 @@ class RequestOTPView(APIView):
         user.otp_expires_at = expires_at
         user.save(update_fields=["otp_code", "otp_expires_at"])
 
-        # TODO: send SMS via SNS or Twilio
         if settings.DEBUG:
-            # Return OTP in response for local development only
+            # Return OTP in response for local development — no SMS sent
             return Response({"message": "OTP sent", "otp": otp})
+
+        sent = send_otp_sms(phone, otp)
+        if not sent:
+            return Response({"error": "SMS_FAILED"}, status=503)
         return Response({"message": "OTP sent"})
 
 
@@ -82,3 +91,18 @@ class UpdateProfileView(APIView):
 
 def _generate_otp():
     return str(random.randint(100000, 999999))
+
+
+def _normalize_phone(raw: str) -> str | None:
+    """
+    Strip common formatting characters and enforce E.164.
+
+    Accepts:  "+1 234 567 8900", "+1-234-567-8900", "+12345678900"
+    Rejects:  "12345678900" (no +), "abc", too short/long
+
+    SNS requires E.164 — numbers without the leading + will not be delivered.
+    """
+    stripped = re.sub(r"[\s\-\(\)]", "", raw)
+    if re.fullmatch(r"\+\d{7,15}", stripped):
+        return stripped
+    return None

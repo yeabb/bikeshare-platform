@@ -3,6 +3,7 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import { Platform } from 'aws-cdk-lib/aws-ecr-assets';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as ecs_patterns from 'aws-cdk-lib/aws-ecs-patterns';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as rds from 'aws-cdk-lib/aws-rds';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
@@ -164,6 +165,17 @@ export class BikeshareBackendStack extends cdk.Stack {
         }),
       },
     });
+
+    // -------------------------------------------------------------------------
+    // Grant ECS task role permission to publish SNS SMS (for OTP delivery).
+    // SNS SMS targets phone numbers directly — no ARN, so resource must be *.
+    // -------------------------------------------------------------------------
+    service.taskDefinition.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: ['sns:Publish'],
+        resources: ['*'],
+      }),
+    );
 
     // ALB health check — pings Django's /health/ every 30 seconds.
     // If 3 consecutive checks fail, ECS kills and restarts the container.
