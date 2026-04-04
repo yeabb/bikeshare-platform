@@ -104,6 +104,9 @@ SIMPLE_JWT = {
 
 # Payments
 DEBT_THRESHOLD = 500  # ETB — debt at or above this amount blocks unlock
+CHAPA_SECRET_KEY = os.environ.get("CHAPA_SECRET_KEY", "")
+CHAPA_WEBHOOK_SECRET = os.environ.get("CHAPA_WEBHOOK_SECRET", "")
+CHAPA_API_URL = "https://api.chapa.co/v1"
 
 # MQTT / IoT
 COMMAND_TTL_SECONDS = 10
