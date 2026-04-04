@@ -102,6 +102,9 @@ SIMPLE_JWT = {
     "USER_ID_CLAIM": "user_id",
 }
 
+# Payments
+DEBT_THRESHOLD = 500  # ETB — debt at or above this amount blocks unlock
+
 # MQTT / IoT
 COMMAND_TTL_SECONDS = 10
 # MQTT_BROKER_TYPE, MQTT_BROKER_HOST, MQTT_BROKER_PORT are defined per environment
