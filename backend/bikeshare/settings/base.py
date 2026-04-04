@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     "apps.commands",
     "apps.rides",
     "apps.iot",
+    "apps.payments",
 ]
 
 MIDDLEWARE = [
