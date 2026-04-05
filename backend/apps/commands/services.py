@@ -115,6 +115,7 @@ def handle_unlock_result(request_id: str, status: str, reason: str = None) -> No
             command.resolved_at = now
             command.save(update_fields=["status", "resolved_at", "updated_at"])
             start_ride(command)
+            _charge_unlock_fee(command)
         else:
             command.status = CommandStatus.FAILED
             command.failure_reason = reason or ""
@@ -166,6 +167,30 @@ def sweep_timed_out_commands() -> int:
             count += 1
 
     return count
+
+
+def _charge_unlock_fee(command) -> None:
+    """
+    Debit the unlock fee from the user's wallet when a ride starts.
+    Logs and swallows errors — a billing failure must not block the ride.
+    """
+    from apps.payments.services import debit_wallet, get_active_pricing_plan, get_or_create_wallet
+
+    try:
+        plan = get_active_pricing_plan()
+        wallet = get_or_create_wallet(command.user)
+        debit_wallet(
+            wallet=wallet,
+            amount=plan.unlock_fee,
+            transaction_type="UNLOCK_FEE",
+            reference=str(command.request_id),
+            pricing_plan=plan,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to charge unlock fee for command=%s user=%s",
+            command.request_id, command.user_id,
+        )
 
 
 def _get_ttl_seconds() -> int:
