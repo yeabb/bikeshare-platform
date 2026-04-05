@@ -112,3 +112,38 @@ def end_ride_on_dock(
         f"Ride {ride.ride_id} COMPLETED — bike={bike_id} "
         f"end={end_station_id}-{end_dock_index} duration={duration}s"
     )
+
+    _charge_ride_fee(ride=ride, duration_seconds=duration)
+
+
+def _charge_ride_fee(ride, duration_seconds: int) -> None:
+    """
+    Debit the per-minute ride charge when a ride completes.
+    Rounds up to the nearest minute.
+    Logs and swallows errors — billing failure must not affect ride state.
+    """
+    from decimal import Decimal
+    from apps.payments.services import debit_wallet, get_active_pricing_plan, get_or_create_wallet
+
+    try:
+        plan = get_active_pricing_plan()
+        minutes = max(1, -(-duration_seconds // 60))  # ceiling division
+        amount = Decimal(str(plan.per_minute_rate)) * minutes
+
+        wallet = get_or_create_wallet(ride.user)
+        debit_wallet(
+            wallet=wallet,
+            amount=amount,
+            transaction_type="RIDE_CHARGE",
+            reference=str(ride.ride_id),
+            pricing_plan=plan,
+        )
+        logger.info(
+            "Ride charge: ride=%s user=%s duration=%ds minutes=%d amount=%s",
+            ride.ride_id, ride.user_id, duration_seconds, minutes, amount,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to charge ride fee for ride=%s user=%s",
+            ride.ride_id, ride.user_id,
+        )
