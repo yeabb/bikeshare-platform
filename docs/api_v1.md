@@ -163,6 +163,8 @@ Initiate a bike unlock by bike QR code scan. Creates a `PENDING` command and pub
 - Bike must be docked (has a known dock and station)
 - User must have no `ACTIVE` ride
 - User must have no `PENDING` command
+- User wallet balance must be ≥ `minimum_balance` from active pricing plan
+- User debt must be below `DEBT_THRESHOLD` (500 ETB)
 
 **Response 202:**
 ```json
@@ -191,6 +193,8 @@ Initiate a bike unlock by bike QR code scan. Creates a `PENDING` command and pub
 | `DOCK_NOT_OCCUPIED` | 400 | Dock state is not OCCUPIED |
 | `ACTIVE_RIDE_EXISTS` | 409 | User already has an active ride |
 | `PENDING_COMMAND_EXISTS` | 409 | User already has a pending command |
+| `INSUFFICIENT_BALANCE` | 402 | Wallet balance below minimum required to unlock |
+| `DEBT_THRESHOLD_EXCEEDED` | 402 | Outstanding debt at or above 500 ETB |
 
 ---
 
@@ -303,6 +307,85 @@ Get a specific ride by ID. User must own the ride.
 | Code | HTTP | Meaning |
 |------|------|---------|
 | `NOT_FOUND` | 404 | Ride not found or not owned by user |
+
+---
+
+## Wallet
+
+### GET /api/v1/me/wallet/ **(auth)**
+
+Get current wallet balance, pricing info, and the 10 most recent transactions.
+
+**Response 200:**
+```json
+{
+  "balance": "1700.00",
+  "currency": "ETB",
+  "minimum_balance": "2000.00",
+  "transactions": [
+    {
+      "id": "1",
+      "type": "TOP_UP",
+      "amount": "2000.00",
+      "balance_after": "1700.00",
+      "reference": "abc123",
+      "created_at": "2026-03-07T10:00:00Z"
+    }
+  ]
+}
+```
+
+**Transaction type values:** `TOP_UP | UNLOCK_FEE | RIDE_CHARGE | REFUND`
+
+`amount` is positive for credits (`TOP_UP`, `REFUND`) and negative for debits (`UNLOCK_FEE`, `RIDE_CHARGE`).
+
+---
+
+### GET /api/v1/me/wallet/transactions/ **(auth)**
+
+Get full transaction history, ordered newest first.
+
+**Response 200:**
+```json
+{
+  "transactions": [...]
+}
+```
+
+Same transaction object structure as above.
+
+---
+
+## Payments
+
+### POST /api/v1/payments/topup/initiate/ **(auth)**
+
+Initiate a wallet top-up via Chapa. Returns a `payment_url` the app should open in a Chrome Custom Tab.
+
+**Request:**
+```json
+{ "amount": "200.00" }
+```
+
+`amount` must be ≥ `minimum_top_up` from the active pricing plan.
+
+**Response 201:**
+```json
+{
+  "topup_id": "550e8400-e29b-41d4-a716-446655440000",
+  "amount": "200.00",
+  "currency": "ETB",
+  "payment_url": "https://checkout.chapa.co/..."
+}
+```
+
+**Errors:**
+
+| Code | HTTP | Meaning |
+|------|------|---------|
+| `AMOUNT_TOO_LOW` | 400 | Amount below minimum top-up |
+| `PAYMENT_INIT_FAILED` | 502 | Could not reach Chapa API |
+| `SERVICE_UNAVAILABLE` | 503 | No active pricing plan configured |
 
 ---
 
