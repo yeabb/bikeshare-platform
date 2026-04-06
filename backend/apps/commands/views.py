@@ -22,7 +22,12 @@ class UnlockCommandView(APIView):
         command, error_code = create_unlock_command(request.user, bike_id)
 
         if error_code:
-            http_status = 409 if error_code in ("ACTIVE_RIDE_EXISTS", "PENDING_COMMAND_EXISTS") else 400
+            if error_code in ("ACTIVE_RIDE_EXISTS", "PENDING_COMMAND_EXISTS"):
+                http_status = 409
+            elif error_code in ("INSUFFICIENT_BALANCE", "DEBT_THRESHOLD_EXCEEDED"):
+                http_status = 402
+            else:
+                http_status = 400
             return Response({"error": error_code}, status=http_status)
 
         return Response(CommandSerializer(command).data, status=202)

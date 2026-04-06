@@ -25,6 +25,17 @@ def create_unlock_command(user, bike_id: str):
     """
     from apps.iot.publisher import publish_unlock_command
 
+    # Guard: wallet balance / debt
+    from apps.payments.services import can_unlock, get_active_pricing_plan, get_or_create_wallet
+    try:
+        plan = get_active_pricing_plan()
+        wallet = get_or_create_wallet(user)
+        allowed, reason = can_unlock(wallet, plan)
+        if not allowed:
+            return None, reason
+    except ValueError:
+        pass  # No pricing plan configured — allow unlock (shouldn't happen in production)
+
     # Guard: active ride
     if user.rides.filter(status="ACTIVE").exists():
         return None, "ACTIVE_RIDE_EXISTS"
